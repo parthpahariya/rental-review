@@ -46,7 +46,8 @@ OTP challenges and rate-limit buckets also support users who have not registered
 | `role` | enum | `user` or `admin`; default `user` |
 | `status` | enum | `active` or `inactive`; default `active` |
 | `deactivated_at` | timestamp, nullable | Required exactly when status is `inactive` |
-| `created_at`, `updated_at` | timestamp | Account lifecycle timestamps |
+| `created_at` | timestamp | Account creation timestamp |
+| `updated_at` | timestamp | Last account modification timestamp |
 
 Tenants and users recording interactions share the same account type; submitting a tenant review does not require a separate role. Additional registration fields are deferred until the corresponding product decision is made. Admin role assignment is privileged and unavailable through self-registration.
 
@@ -62,7 +63,8 @@ Tenants and users recording interactions share the same account type; submitting
 | `failure_code` | string, nullable | Sanitized delivery error code; no OTP or message body |
 | `attempt_count` | integer | Default `0`; nonnegative |
 | `max_attempts` | integer | Positive; snapshot of configured verification limit |
-| `created_at`, `expires_at` | timestamp | Expiry must be later than creation |
+| `created_at` | timestamp | OTP challenge creation timestamp |
+| `expires_at` | timestamp | OTP challenge expiry; must be later than `created_at` |
 | `resend_available_at` | timestamp | Earliest replacement request allowed by cooldown |
 | `consumed_at` | timestamp, nullable | Set atomically on successful verification |
 | `invalidated_at` | timestamp, nullable | Set when replaced or otherwise revoked |
@@ -95,7 +97,8 @@ Composite primary key: `(action, subject_kind, subject_digest, window_started_at
 | `id` | UUID | Primary key |
 | `user_id` | UUID | Foreign key to `users` |
 | `token_digest` | string | Unique digest of session token; never store the raw token |
-| `created_at`, `expires_at` | timestamp | Expiry later than creation |
+| `created_at` | timestamp | Session creation timestamp |
+| `expires_at` | timestamp | Session expiry; must be later than `created_at` |
 | `revoked_at` | timestamp, nullable | Non-null sessions cannot authorize access |
 
 Deactivation updates the account and revokes all sessions in one transaction. Authenticated writes must also check current account status. Reactivation requires verified possession of the registered number and explicit confirmation, restores the existing account, and creates a new session; old sessions remain revoked. The unique phone constraint prevents duplicate accounts, including concurrent registration attempts.
@@ -113,7 +116,8 @@ Owner names are supplied by users at submission and stored directly on each tena
 | `building_name` | string, nullable | Optional building label |
 | `latitude` | decimal | Between `-90` and `90`, inclusive |
 | `longitude` | decimal | Between `-180` and `180`, inclusive |
-| `created_at`, `updated_at` | timestamp | Record timestamps |
+| `created_at` | timestamp | Record creation timestamp |
+| `updated_at` | timestamp | Last record modification timestamp |
 
 A location represents a map marker and may contain multiple flats. Coordinates and addresses are not assumed unique. Geographic coverage, geocoding provider, and location deduplication rules remain unresolved.
 
@@ -124,7 +128,8 @@ A location represents a map marker and may contain multiple flats. Coordinates a
 | `id` | UUID | Primary key |
 | `location_id` | UUID | Foreign key to `locations` |
 | `label` | string | Nonblank identifier presented to users, such as a flat number |
-| `created_at`, `updated_at` | timestamp | Record timestamps |
+| `created_at` | timestamp | Record creation timestamp |
+| `updated_at` | timestamp | Last record modification timestamp |
 
 Feedback belongs to a flat, not just its building or coordinates. A location marker with multiple flats must allow selection of a flat before showing its two feedback tabs. No uniqueness rule on labels is assumed until property identification is defined.
 
@@ -194,7 +199,8 @@ Interactions publish immediately and remain public when the author deactivates. 
 | `media_type` | string | Validated MIME type |
 | `size_bytes` | integer | Positive file size |
 | `status` | enum | `pending`, `ready`, `rejected`, `deletion_pending`, or `deleted` |
-| `created_at`, `updated_at` | timestamp | Upload lifecycle timestamps |
+| `created_at` | timestamp | Upload record creation timestamp |
+| `updated_at` | timestamp | Last upload record modification timestamp |
 | `deleted_at` | timestamp, nullable | Set when stored object deletion completes |
 
 Only `ready` files can be attached. File type and size limits are configuration decisions. Proposed file lifecycle separates database changes from object-storage operations: retry failed object deletion and clean up expired unattached uploads. Attachment removal takes effect immediately even if physical object deletion is pending.
