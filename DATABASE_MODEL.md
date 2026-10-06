@@ -22,10 +22,8 @@ erDiagram
     USERS ||--o{ FILES : uploads
     USERS ||--o{ REVIEW_DELETION_REQUESTS : requests
     LOCATIONS ||--o{ FLATS : contains
-    FLATS ||--o{ FLAT_OWNERS : has
-    OWNERS ||--o{ FLAT_OWNERS : associated_with
-    FLAT_OWNERS ||--o{ TENANT_REVIEWS : receives
-    FLAT_OWNERS ||--o{ INTERACTION_REVIEWS : receives
+    FLATS ||--o{ TENANT_REVIEWS : receives
+    FLATS ||--o{ INTERACTION_REVIEWS : receives
     TENANCY_PROOF_POLICIES ||--o{ TENANT_REVIEWS : governs
     TENANT_REVIEWS ||--o{ TENANCY_PROOFS : has
     FILES ||--o| TENANCY_PROOFS : stores
@@ -102,17 +100,9 @@ Composite primary key: `(action, subject_kind, subject_digest, window_started_at
 
 Deactivation updates the account and revokes all sessions in one transaction. Authenticated writes must also check current account status. Reactivation requires verified possession of the registered number and explicit confirmation, restores the existing account, and creates a new session; old sessions remain revoked. The unique phone constraint prevents duplicate accounts, including concurrent registration attempts.
 
-## Owner and property tables
+## Property tables
 
-### `owners`
-
-| Field | Type | Rules |
-| --- | --- | --- |
-| `id` | UUID | Primary key |
-| `display_name` | string | Nonblank public owner name; not unique |
-| `created_at`, `updated_at` | timestamp | Record timestamps |
-
-An owner is the subject of feedback and need not have a user account. A name alone is not a reliable identity or deduplication key.
+Owner names are supplied by users at submission and stored directly on each tenant review and interaction review. There is no owner entity or flat-to-owner association. Names are not identity or deduplication keys; different reviews for one flat may name different owners, and matching names across reviews do not establish that they concern the same person.
 
 ### `locations`
 
@@ -138,17 +128,6 @@ A location represents a map marker and may contain multiple flats. Coordinates a
 
 Feedback belongs to a flat, not just its building or coordinates. A location marker with multiple flats must allow selection of a flat before showing its two feedback tabs. No uniqueness rule on labels is assumed until property identification is defined.
 
-### `flat_owners`
-
-| Field | Type | Rules |
-| --- | --- | --- |
-| `id` | UUID | Primary key |
-| `flat_id` | UUID | Foreign key to `flats` |
-| `owner_id` | UUID | Foreign key to `owners` |
-| `created_at` | timestamp | Association creation timestamp |
-
-Unique pair: `(flat_id, owner_id)`. This association supports owners with multiple properties and different reviewed owners for the same flat. Both review types reference it so their flat and owner cannot disagree. Once referenced, its owner and flat are immutable; retain historical associations rather than reassigning existing reviews when ownership changes. This is a feedback association, not a verified legal ownership register.
-
 ## Feedback and file tables
 
 ### `tenancy_proof_policies`
@@ -168,7 +147,10 @@ Policies are immutable versions managed by privileged configuration. The latest 
 | --- | --- | --- |
 | `id` | UUID | Primary key |
 | `author_id` | UUID | Foreign key to `users` |
-| `flat_owner_id` | UUID | Foreign key to `flat_owners` |
+| `flat_id` | UUID | Foreign key to `flats` |
+| `owner_name` | string | Nonblank public owner name supplied by the author at submission; not unique |
+| `tenancy_start_date` | date | Required start date of the tenancy period being reviewed; immutable |
+| `tenancy_end_date` | date | Required end date of the tenancy period being reviewed; immutable |
 | `rating` | integer | Check: `1 <= rating <= 5` |
 | `feedback` | text | Nonblank written review |
 | `proof_policy_id` | UUID | Foreign key to `tenancy_proof_policies`; fixed at submission |
@@ -176,9 +158,15 @@ Policies are immutable versions managed by privileged configuration. The latest 
 | `updated_at` | timestamp | Initially equal to submission; changes on permitted edits |
 | `deleted_at` | timestamp, nullable | Set only by approved admin deletion |
 
-Reviews publish immediately; no moderation state is needed. Public visibility is `deleted_at IS NULL` and never depends on the author's account status. Derive the editing deadline as `submitted_at + 30 days` using elapsed UTC time; editing is allowed strictly before that deadline. Only the active author may change `rating` and `feedback`; author, association, submission timestamp, and policy are immutable.
+Reviews publish immediately; no moderation state is needed. Public visibility is `deleted_at IS NULL` and never depends on the author's account status. Derive the editing deadline as `submitted_at + 30 days` using elapsed UTC time; editing is allowed strictly before that deadline. Only the active author may change `rating` and `feedback`; author, flat, owner name, tenancy dates, submission timestamp, and policy are immutable.
 
-No unique `(author_id, flat_owner_id)` constraint is imposed: the requirements do not limit the number of tenant reviews per author and flat. The admin deletion process below is the only supported way to hide a submitted tenant review.
+Represent the tenancy period as `[tenancy_start_date, tenancy_end_date)`: start inclusive, end exclusive, with `tenancy_start_date < tenancy_end_date`. Adjacent periods may share an end/start date. Two periods overlap exactly when `new_start < existing_end AND existing_start < new_end`; this catches identical, partially overlapping, and contained periods.
+
+For a given flat, reject a new tenant review if its tenancy period overlaps a review with a different `author_id` and `deleted_at IS NULL`. Owner names do not participate in this check. Inactive authors and pending/rejected deletion requests still block conflicts; approved deleted reviews do not. Reviews for different flats and interaction reviews do not participate. Multiple reviews by the same author remain allowed.
+
+Serialize tenant-review creation for each flat by locking the existing `flats` row before checking overlaps, then reading the committed conflicting reviews and inserting the review/proofs in the same transaction. The check must see submissions committed by the previous lock holder; use an appropriate transaction isolation strategy or a database constraint with equivalent behavior. Every insertion path must enforce this rule, including when no review yet exists for the flat. An index or a check performed only before the transaction cannot prevent concurrent conflicting submissions. Admin deletion approval takes the same flat lock before its request/review locks, using consistent lock ordering, so releasing a period and creating a review are serialized.
+
+No unique `(author_id, flat_id)` constraint is imposed: the requirements do not limit the number of tenant reviews per author and flat. The admin deletion process below is the only supported way to hide a submitted tenant review.
 
 ### `interaction_reviews`
 
@@ -186,12 +174,13 @@ No unique `(author_id, flat_owner_id)` constraint is imposed: the requirements d
 | --- | --- | --- |
 | `id` | UUID | Primary key |
 | `author_id` | UUID | Foreign key to `users` |
-| `flat_owner_id` | UUID | Foreign key to `flat_owners` |
+| `flat_id` | UUID | Foreign key to `flats` |
+| `owner_name` | string | Nonblank public owner name supplied by the author at submission; not unique |
 | `description` | text | Nonblank description |
 | `interaction_date` | date | Date supplied by the author |
 | `submitted_at` | timestamp | Original submission instant |
 
-Interactions publish immediately and remain public when the author deactivates. They require neither a tenant review nor a rating. Multiple interactions for the same owner and flat are allowed. No interaction editing, deletion, or tenant-review link is introduced while those product decisions remain unresolved. Attachment changes do not change the interaction itself.
+Interactions publish immediately and remain public when the author deactivates. They require neither a tenant review nor a rating. Enforce a database unique constraint on `(author_id, flat_id)` so each user can post at most one interaction review per flat, including under concurrent submissions. Owner name and interaction date are not part of the uniqueness key. The same author may review other flats, and different authors may review the same flat. Account deactivation/reactivation and attachment changes do not reset the limit. No interaction editing, deletion, or tenant-review link is introduced while those product decisions remain unresolved. Attachment changes do not change the interaction itself.
 
 ### `files`
 
@@ -265,12 +254,12 @@ Required transactional operations:
 
 1. **OTP issuance and verification:** enforce shared limits and cooldowns, invalidate replaced challenges, and atomically consume successful codes and continuation tokens. SMS delivery occurs outside the transaction with persisted delivery outcomes.
 2. **Account lifecycle:** complete verified registration with unique-phone conflict handling; revoke sessions on deactivation; reactivate the original account only after confirmation. Serialize lifecycle changes and authenticated writes so an inactive account cannot continue writing with an old session.
-3. **Review submission:** verify active author, select the effective proof policy, validate files, and insert the review and any proof associations together. Do not trust a client-supplied policy version.
+3. **Review submission:** verify active author, validate the flat, nonblank owner name, and tenancy dates, lock the flat and reject overlaps with another author's non-deleted tenant reviews, select the effective proof policy, validate files, and insert the review and any proof associations together. Interaction submission likewise validates the flat and owner name and atomically inserts the interaction and any supporting attachments, enforcing unique `(author_id, flat_id)`. Translate a violation of this constraint into the duplicate-interaction conflict response and roll back the submission so no new review or attachment links remain; a preliminary existence check alone is insufficient. Do not trust a client-supplied policy version.
 4. **Review edit:** enforce author identity, current active status, visibility, and `current_time < submitted_at + 30 days` within the write operation, not just in the UI.
 5. **File attachment/removal:** check account status, review authorship, file ownership, purpose, and lifecycle state. Recheck authorization when a completed upload becomes attached.
-6. **Deletion request/decision:** validate authorship on request creation and admin role on decision; serialize competing decisions and update deletion visibility atomically.
+6. **Deletion request/decision:** validate authorship on request creation and admin role on decision; serialize competing decisions and update deletion visibility atomically, taking the flat lock first so approval also releases the tenancy period consistently with submissions.
 
-Public queries should use explicit field allowlists or database views and expose only location, flat, owner, rating, feedback/description, interaction date, and relevant review timestamps/IDs. Do not join or serialize private account, authentication, proof, storage-key, or deletion-request fields into public responses. Administrative and self-service endpoints require separate authorization.
+Public queries should use explicit field allowlists or database views and expose only location, flat, review-supplied owner name, rating, feedback/description, tenancy dates, interaction date, and relevant review timestamps/IDs. Do not join or serialize private account, authentication, proof, storage-key, or deletion-request fields into public responses. Administrative and self-service endpoints require separate authorization.
 
 ## Query paths and indexes
 
@@ -284,9 +273,10 @@ In addition to primary-key and unique indexes, add indexes on foreign keys used 
 | Expired rate-limit cleanup | `auth_rate_limits(window_ends_at)` |
 | Revoke account sessions | `sessions(user_id, revoked_at)`; expiry cleanup on `expires_at` |
 | Flats at a marker | `flats(location_id)` |
-| Owners for a flat | Unique `flat_owners(flat_id, owner_id)`; additional `flat_owners(owner_id)` |
-| Public tenant review tab | `tenant_reviews(flat_owner_id, submitted_at, id)` filtered to `deleted_at IS NULL`, where supported |
-| Public interaction tab | `interaction_reviews(flat_owner_id, submitted_at, id)` |
+| Tenant period conflict check | `tenant_reviews(flat_id, tenancy_start_date, tenancy_end_date)` filtered to `deleted_at IS NULL`, where supported; compare author IDs and period overlap under the flat lock |
+| Public tenant review tab | `tenant_reviews(flat_id, submitted_at, id)` filtered to `deleted_at IS NULL`, where supported |
+| Public interaction tab | `interaction_reviews(flat_id, submitted_at, id)` |
+| One interaction review per user per flat | Unique `interaction_reviews(author_id, flat_id)` |
 | Author's records | Each review table on `(author_id, submitted_at, id)` |
 | Active interaction attachments | `interaction_attachments(interaction_review_id, removed_at)` |
 | Proof lookup | `tenancy_proofs(tenant_review_id)` |
@@ -295,7 +285,7 @@ In addition to primary-key and unique indexes, add indexes on foreign keys used 
 | Prevent duplicate pending requests | Unique filtered index on `tenant_review_id` where `status = 'pending'`, or equivalent transactional enforcement |
 | Map viewport | Spatial index on a point derived from location coordinates if supported; otherwise indexed bounding-box filtering appropriate to the chosen database |
 
-A map location qualifies when at least one of its flat-owner associations has a visible tenant review **or** an interaction review. Use `EXISTS` or a union of qualifying location IDs to avoid duplicates and inflated rating counts from joining both review tables. Interaction-only locations must appear. Compute tenant rating aggregates only from visible tenant reviews; return no rating when none exist. Deleting a location's final visible tenant review removes its marker only if it has no interaction reviews either.
+A map location qualifies when at least one of its flats has a visible tenant review **or** an interaction review. Use `EXISTS` or a union of qualifying location IDs to avoid duplicates and inflated rating counts from joining both review tables. Interaction-only locations must appear. Compute tenant rating aggregates only from visible tenant reviews; return no rating when none exist. Deleting a location's final visible tenant review removes its marker only if it has no interaction reviews either.
 
 Public retrieval never filters by author account status. Use stable pagination ordered by submission time and ID. Nearby-point search and its radius remain deferred; viewport and selected-marker lookup are supported by the model.
 
@@ -305,14 +295,14 @@ Public retrieval never filters by author account status. Use stable pagination o
 | --- | --- |
 | FR-01: Registration and OTP sign-in | `users`, `otp_challenges`, `auth_rate_limits`, `sessions` |
 | FR-02: Deactivation and reactivation | Account status, session revocation, unique phone identity, author-independent public visibility |
-| FR-04: Tenant reviews | `tenant_reviews`, versioned proof policies, private proofs, immutable submission time and derived editing deadline |
-| FR-05: Map search | `locations`, `flats`, `flat_owners`, visibility union across both review types |
-| FR-06: Public interactions | `interaction_reviews`, `files`, `interaction_attachments`, separate public projection |
-| FR-07: Separate tabs | Independent review tables joined through the same flat-owner association |
+| FR-04: Tenant reviews | `tenant_reviews`, tenancy periods with atomic conflict checks across different authors per flat, versioned proof policies, private proofs, immutable submission time and derived editing deadline |
+| FR-05: Map search | `locations`, `flats`, visibility union across both review types |
+| FR-06: Public interactions | `interaction_reviews` with unique `(author_id, flat_id)`, `files`, `interaction_attachments`, separate public projection |
+| FR-07: Separate tabs | Independent review tables linked directly to the same flat, with owner names stored per review |
 | FR-08: Admin deletion | `review_deletion_requests`, transactional approval, logical review deletion |
 
 ## Decisions still needed
 
-The unresolved decisions in `REQUIREMENTS.md` remain open: extra registration fields; SMS provider, countries, expiry, cooldown, and limits; interaction edit/delete/link behavior; owner/property creation and deduplication; nearby-search behavior; and map provider/coverage.
+The unresolved decisions in `REQUIREMENTS.md` remain open: extra registration fields; SMS provider, countries, expiry, cooldown, and limits; interaction edit/delete/link behavior; location/flat creation and deduplication; nearby-search behavior; and map provider/coverage.
 
 Implementation must also select a database/ORM, define file size/type and supporting-file access policies, and set retention periods for authentication data, detached uploads, and private audit records. The model does not introduce tenancy-proof verification, mandatory proof by default, review pre-approval, or a one-review-per-flat limit.

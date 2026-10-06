@@ -57,19 +57,24 @@ Tenants must be able to submit a rating and written review describing their expe
 
 Acceptance criteria:
 
-- A signed-in tenant can select or identify the owner being reviewed.
+- A signed-in tenant must enter a nonblank owner name when posting a review. The name is stored on that review; owners are not stored on or linked to flats.
 - A tenant can optionally provide proof of tenancy for the flat being reviewed. Omitting proof does not prevent review submission under the current policy.
 - The proof-of-tenancy requirement must be configurable, defaulting to optional, so it can be made mandatory in the future without redesigning the review submission flow.
 - If the policy is changed to mandatory, new review submissions require proof of tenancy and show a clear validation error when it is missing.
-- A review includes a rating and written feedback and is associated with the specific flat and its rental property location.
+- A review includes a rating, written feedback, and the tenancy period being reviewed, with required start and end dates, and is associated with the specific flat and its rental property location.
+- Dates use a start-inclusive, end-exclusive period: the end date must be later than the start date. A tenancy ending on the same date another begins is allowed.
+- Two different tenants cannot submit tenant reviews with overlapping tenancy periods for the same flat, even if they supply different owner names. A conflict produces a clear validation message and does not publish the new review.
+- This restriction applies across different author accounts, not multiple reviews by the same author, and does not apply to interaction reviews or reviews for different flats.
+- Conflict checks include existing tenant reviews by inactive authors and reviews with pending or rejected deletion requests. An admin-approved deleted review no longer blocks the period.
+- The server must enforce the conflict check atomically so concurrent submissions cannot create overlapping reviews by different tenants.
 - Ratings use a five-star scale, from 1 to 5 stars; missing or out-of-range ratings produce a clear validation error.
 - Missing required information produces a clear validation error.
-- A successfully submitted review is saved and can be retrieved for its associated owner and location.
+- A successfully submitted review is saved with the supplied owner name and can be retrieved for its flat and location.
 - Reviews are published immediately after successful submission, without prior admin approval.
 - Visitors can read tenant reviews and their ratings without creating an account or signing in.
-- The rating is displayed alongside the written feedback wherever the review is shown.
+- The supplied owner name, tenancy period, and rating are displayed alongside the written feedback wherever the review is shown.
 - When an owner has multiple rental properties, each review remains associated with the property it concerns.
-- Only the signed-in author with an active account can edit a review's rating and written feedback during the 30-day editing window.
+- Only the signed-in author with an active account can edit a review's rating and written feedback during the 30-day editing window. The tenancy dates remain fixed at submission.
 - The editing window starts at the original submission timestamp and closes when 30 days have elapsed. Editing a review does not reset or extend this window.
 - A successful edit updates the existing review, and subsequent retrievals show the updated rating and feedback.
 - The review interface shows the editing deadline. Once the window closes, editing is unavailable and any edit request is rejected with clear feedback.
@@ -86,7 +91,7 @@ Acceptance criteria:
 - Visitors can browse the map and read its review results without an account.
 - Clicking or tapping a marker provides access to the Tenant Reviews and Interactions tabs for the selected flat, displaying the corresponding reviews and identifying the reviewed owner for each review.
 - Users can pan and zoom the map to explore other locations.
-- If multiple owners have reviews at the same location, users can distinguish their reviews.
+- Each review displays its supplied owner name, including when reviews for the same flat or location name different owners. Matching names do not establish a shared owner identity.
 - Loading, empty results, and retrieval errors have clear feedback.
 
 ### FR-06: Public interaction reviews of owners
@@ -95,11 +100,13 @@ Users must be able to post public interaction reviews describing their interacti
 
 Acceptance criteria:
 
-- A signed-in user can select or identify the owner they interacted with.
-- An interaction record includes a written description and the date of the interaction.
+- A signed-in user must enter a nonblank owner name when posting an interaction review. The name is stored on that interaction review; no owner record or flat-owner link is required.
+- An interaction record includes the supplied owner name, a written description, and the date of the interaction. The owner name is displayed with the public interaction review.
 - Each interaction is associated with the specific flat it concerns.
 - A user can add an interaction without first submitting an owner review.
-- Multiple interactions can be recorded for the same owner.
+- A user can post at most one interaction review per flat. The same user can review other flats, and different users can each post one interaction review for the same flat.
+- A second interaction review by the same user for the same flat is rejected with clear feedback, even if the owner name or interaction date differs. Concurrent submissions must not create duplicates.
+- Account deactivation/reactivation and supporting-file changes do not reset this limit. The author can continue managing supporting files on their existing interaction review.
 - Missing required information produces a clear validation error.
 - A successfully posted interaction review is saved and visible to everyone in the relevant flat's Interactions tab, including visitors who are not signed in.
 - Interaction reviews are published immediately after successful submission, without prior admin approval.
@@ -116,10 +123,10 @@ Each flat's detail page must provide separate **Interactions** and **Tenant Revi
 
 Acceptance criteria:
 
-- Both tabs refer to the same selected flat and identify its owner.
+- Both tabs refer to the same selected flat. Each review identifies the owner using the name supplied by its author; the flat has no stored owner.
 - The Interactions tab lets users record their interactions with the owner about that flat, including interactions before becoming a tenant.
 - The Tenant Reviews tab lets tenants submit reviews of their experience with the owner while renting that flat.
-- Each tab displays its corresponding records and provides its own submission form. Both interaction reviews and tenant reviews are visible to everyone, including visitors without an account; submission requires sign-in.
+- Each tab displays its corresponding records and provides its own submission form with a required owner-name field. Both interaction reviews and tenant reviews are visible to everyone, including visitors without an account; submission requires sign-in.
 - Switching tabs preserves the selected flat; users do not need to select it again.
 - Interactions and tenant reviews remain separate record types; submitting one does not require submitting the other.
 - Records for different flats remain separate, even when the flats share an owner or building location.
@@ -159,6 +166,6 @@ Only unresolved questions are listed below. Once a decision is made, record it i
 - **Registration:** Which account fields are required in addition to the verified mobile number?
 - **Mobile OTP:** Which SMS provider and countries are supported, and what OTP expiry, resend cooldown, and request and verification limits apply?
 - **Interactions:** Can authors edit or delete interaction reviews, or link them to a tenant review?
-- **Owner and property records:** How are owners and locations added, identified, and kept free of duplicates?
+- **Property records:** How are locations and flats added, identified, and kept free of duplicates?
 - **Map clicks:** Is selecting a property marker sufficient, or should clicking any map point also find nearby reviews? If nearby search is needed, what radius applies?
 - **Map service:** Which map provider and geographic coverage should be used?
