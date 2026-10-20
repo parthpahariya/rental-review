@@ -1,0 +1,120 @@
+name: rental-review
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-rental_review}
+      POSTGRES_USER: ${POSTGRES_USER:-rental}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rental_local_only}
+    volumes:
+      - postgres_v1_data:/var/lib/postgresql/data
+    command:
+      [
+        "postgres",
+        "-c",
+        "shared_buffers=128MB",
+        "-c",
+        "work_mem=4MB",
+        "-c",
+        "maintenance_work_mem=64MB",
+        "-c",
+        "max_connections=40",
+      ]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+    mem_limit: ${DB_MEMORY_LIMIT:-512m}
+    mem_reservation: 256m
+    memswap_limit: ${DB_MEMORY_LIMIT:-512m}
+    cpus: 1.0
+    pids_limit: 100
+    restart: unless-stopped
+    networks: [data]
+    logging: &logging
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  backend:
+    image: ${BACKEND_IMAGE:-rental-review-backend:local}
+    build:
+      context: ./python/backend
+      target: runtime
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-rental}:${POSTGRES_PASSWORD:-rental_local_only}@db:5432/${POSTGRES_DB:-rental_review}
+      APP_ENV: ${APP_ENV:-development}
+      SECRET_KEY: ${SECRET_KEY:-local-development-only-change-before-deployment}
+      SMS_BACKEND: ${SMS_BACKEND:-development}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_FROM_NUMBER: ${TWILIO_FROM_NUMBER:-}
+      CORS_ORIGINS: http://localhost:${WEB_PORT:-8080},http://localhost:5173
+      SEED_DEMO_DATA: ${SEED_DEMO_DATA:-true}
+      UPLOAD_DIR: /app/uploads
+    volumes:
+      - uploads:/app/uploads
+    ports:
+      - "127.0.0.1:${API_PORT:-8000}:8000"
+    depends_on:
+      db: { condition: service_healthy }
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health/ready', timeout=3)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    mem_limit: ${BACKEND_MEMORY_LIMIT:-384m}
+    mem_reservation: 128m
+    memswap_limit: ${BACKEND_MEMORY_LIMIT:-384m}
+    cpus: 1.0
+    pids_limit: 100
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+    networks: [data, edge]
+    logging: *logging
+
+  web:
+    image: ${WEB_IMAGE:-rental-review-web:local}
+    build: ./fronend/webUI
+    ports:
+      - "127.0.0.1:${WEB_PORT:-8080}:8080"
+    depends_on:
+      backend: { condition: service_healthy }
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "--quiet",
+          "--tries=1",
+          "--spider",
+          "http://127.0.0.1:8080/health",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    mem_limit: ${WEB_MEMORY_LIMIT:-128m}
+    mem_reservation: 32m
+    memswap_limit: ${WEB_MEMORY_LIMIT:-128m}
+    cpus: 0.5
+    pids_limit: 50
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+    networks: [edge]
+    logging: *logging
+
+volumes:
+  postgres_v1_data:
+  uploads:
+
+networks:
+  data:
+  edge:
