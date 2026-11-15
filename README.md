@@ -28,6 +28,16 @@ docker compose ps
 docker compose down          # Stops containers; preserves database and files
 ```
 
+`make up` builds and starts the stack; `make down` stops it while preserving data.
+For Colima, use `make full_up` to start the `rental-review` profile and the stack,
+then `make full_down` to stop both and release the VM's resources. Override the
+profile with `COLIMA_PROFILE=default` (or another name) on both commands if needed.
+
+After startup, run `make watch` to rebuild the backend and web UI when their source
+files change. With Colima, use `DOCKER_CONTEXT=colima-rental-review make watch`
+(or `colima` for the default profile) to target that VM explicitly. Press Ctrl+C
+to stop watching; the stack keeps running.
+
 ## Included behavior
 
 - OpenStreetMap/Leaflet map with pan, zoom, keyboard markers, and an equivalent searchable property list. Select a building, then a flat; switch between Tenant Reviews and Interactions.
@@ -48,7 +58,7 @@ compose.yaml            Application stack and resource limits
 compose.test.yaml       Isolated PostgreSQL integration-test stack
 compose.ci.yaml         GitLab Docker-in-Docker port override
 .github/workflows/ci.yml GitHub Actions CI/CD
-.gitlab-ci.yml          GitLab CI/CD
+.gitlab/ci.yml          GitLab CI/CD
 scripts/                Smoke checks, deployment, database readiness
 ```
 
@@ -91,6 +101,11 @@ Backend tests use real PostgreSQL and include concurrent overlapping submissions
 For direct API development: use Python 3.12+, install `python/backend/requirements-dev.txt` into a virtual environment, set `DATABASE_URL` to a local PostgreSQL instance, and run `alembic upgrade head` followed by `uvicorn app.main:app --reload` from `python/backend`. Run `npm ci && npm run dev` from `fronend/webUI`; Vite proxies `/api` to `127.0.0.1:8000`.
 
 ## GitHub and GitLab CI/CD
+
+The GitHub workflow lives in `.github/workflows/ci.yml`. GitLab's pipeline lives
+in `.gitlab/ci.yml`. In GitLab, open **Settings → CI/CD → General pipelines**,
+set **CI/CD configuration file** to `.gitlab/ci.yml`, and save the changes.
+See [GitLab's custom configuration instructions](https://docs.gitlab.com/ci/pipelines/settings/#specify-a-custom-cicd-configuration-file).
 
 Both pipelines run backend checks and real PostgreSQL integration tests, frontend tests/builds, then an assembled Docker Compose smoke check. Successful default-branch/tag pipelines publish backend and web images tagged `sha-<full commit SHA>`; the default branch also publishes `latest`. GitHub uses GHCR and `GITHUB_TOKEN`; GitLab uses its built-in container registry credentials. Pull/merge requests test without publishing. GitLab's Docker jobs require a privileged runner configured for TLS Docker-in-Docker with the shared `/certs/client` volume, as described in [GitLab's runner setup](https://docs.gitlab.com/ci/docker/using_docker_build/#use-the-docker-executor-with-docker-in-docker).
 

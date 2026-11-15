@@ -1,10 +1,28 @@
-.PHONY: up down logs test test-backend test-web smoke clean-test
+DOCKER ?= docker
+COMPOSE = $(DOCKER) compose
+COLIMA_PROFILE ?= rental-review
+COLIMA_CONTEXT = $(if $(filter default,$(COLIMA_PROFILE)),colima,colima-$(COLIMA_PROFILE))
+
+.PHONY: up down full_up full_down watch logs test test-backend test-web smoke clean-test
 
 up:
-	docker compose up --build -d --wait --wait-timeout 180
+	$(COMPOSE) up --build -d --wait --wait-timeout 180
+
+watch:
+	$(COMPOSE) watch --no-up backend web
 
 down:
-	docker compose down
+	$(COMPOSE) down
+
+full_up:
+	colima start --profile "$(COLIMA_PROFILE)"
+	$(MAKE) up DOCKER_CONTEXT="$(COLIMA_CONTEXT)"
+
+full_down:
+	@status=0; \
+	if colima status --profile "$(COLIMA_PROFILE)" >/dev/null 2>&1; then \
+		$(MAKE) down DOCKER_CONTEXT="$(COLIMA_CONTEXT)" || status=$$?; fi; \
+	colima stop --profile "$(COLIMA_PROFILE)" || status=$$?; exit $$status
 
 logs:
 	docker compose logs -f --tail=100
