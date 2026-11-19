@@ -10,14 +10,17 @@ import {
   SignIn,
 } from "./components";
 import PropertyMap from "./Map";
-import type { Bounds, MapView, Point } from "./Map";
+import LocalitySearch, { DEFAULT_CENTER } from "./LocalitySearch";
+import type { Area } from "./LocalitySearch";
+import type { Bounds, Focus, MapView, Point } from "./Map";
 import { api, allPages, hasToken, message, setToken } from "./api";
 import type { Account, Flat, Interaction, Location, Review } from "./api";
 
 export default function App() {
   const [locations, setLocations] = useState<Location[]>([]);
-  const [search, setSearch] = useState("");
-  const [query, setQuery] = useState("");
+  // The map stays hidden until the visitor picks a locality to look at.
+  const [area, setArea] = useState<Area | null>(null);
+  const [focus, setFocus] = useState<Focus | null>(null);
   const [selected, setSelected] = useState<Location | null>(null);
   const [flats, setFlats] = useState<Flat[]>([]);
   const [flat, setFlat] = useState<Flat | null>(null);
@@ -42,7 +45,7 @@ export default function App() {
   const [detailError, setDetailError] = useState("");
   const [version, setVersion] = useState(0);
   const [notice, setNotice] = useState("");
-  const detailRef = useRef<HTMLElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     function sessionEnded() {
       setAccount(null);
@@ -63,9 +66,7 @@ export default function App() {
     let live = true;
     setLoading(true);
     setError("");
-    allPages<Location>(
-      `/locations?reviewed_only=false${query ? `&q=${encodeURIComponent(query)}` : ""}`,
-    )
+    allPages<Location>("/locations?reviewed_only=false")
       .then((rows) => {
         if (live) setLocations(rows);
       })
@@ -78,7 +79,7 @@ export default function App() {
     return () => {
       live = false;
     };
-  }, [query, version]);
+  }, [version]);
   useEffect(() => {
     if (!selected) return;
     let live = true;
@@ -143,14 +144,42 @@ export default function App() {
   function selectLocation(location: Location) {
     setDraft(null);
     setSelected(location);
-    setTimeout(
-      () =>
-        detailRef.current?.scrollIntoView({
-          behavior: "smooth",
-          block: "nearest",
-        }),
-      50,
-    );
+    // Details replace the list in the side panel; start them from the top.
+    if (panelRef.current) panelRef.current.scrollTop = 0;
+  }
+  function openArea(next: Area) {
+    setArea(next);
+    setSelected(null);
+    setDraft(null);
+    setFocus((f) => ({ ...next, key: (f?.key ?? 0) + 1 }));
+    window.scrollTo({ top: 0 });
+  }
+  function openPlace(location: Location) {
+    openArea({
+      name: location.building_name || "Rental property",
+      detail: location.address,
+      center: location,
+      zoom: 17,
+    });
+    selectLocation(location);
+  }
+  function browseAll() {
+    openArea({
+      name: "All places",
+      center: DEFAULT_CENTER.center,
+      zoom: 12,
+      bounds: locations.length
+        ? {
+            west: Math.min(...locations.map((l) => l.longitude)),
+            east: Math.max(...locations.map((l) => l.longitude)),
+            south: Math.min(...locations.map((l) => l.latitude)),
+            north: Math.max(...locations.map((l) => l.latitude)),
+          }
+        : undefined,
+    });
+  }
+  function changeArea() {
+    document.getElementById("locality-search")?.focus();
   }
   function requireAccount(next: Dialog) {
     if (account) setDialog(next);
@@ -198,11 +227,11 @@ export default function App() {
   const hiddenCount = locations.length - visible.length;
   const sorted = sortLocations(visible, sort, view?.center);
   const listed = sorted.slice(0, shown);
-  // A new area, sort or search starts again from the top of the list.
+  // A new map area or sort starts again from the top of the list.
   const areaKey = view
     ? `${view.bounds.west},${view.bounds.south},${view.bounds.east},${view.bounds.north}`
     : "";
-  useEffect(() => setShown(PAGE_SIZE), [areaKey, sort, query]);
+  useEffect(() => setShown(PAGE_SIZE), [areaKey, sort]);
   const totalReviews = visible.reduce(
     (sum, location) =>
       sum +
@@ -211,574 +240,569 @@ export default function App() {
     0,
   );
   const items = tab === "tenant" ? reviews : interactions;
+  const closeDetails = () => {
+    setSelected(null);
+    setFlat(null);
+  };
   return (
     <>
-      <header className="site-header">
+      <a className="skip-link" href={area ? "#panel" : "#main"}>
+        Skip to content
+      </a>
+      <header className={`topbar ${area ? "is-app" : ""}`}>
         <a href="/" className="brand" aria-label="Rental Review home">
-          <span className="brand-icon">
-            <Icon name="home" size={25} />
+          <span className="brand-mark" aria-hidden="true">
+            <Icon name="home" size={18} />
           </span>
-          <span>
-            rental<span className="brand-light">review</span>
-            <span className="brand-dot">.</span>
+          <span className="brand-name">
+            rental<b>review</b>
           </span>
         </a>
-        <nav aria-label="Main navigation">
-          <a className="nav-active" href="#explore">
-            Explore rentals
-          </a>
+        {area && (
+          <div className="topbar-search">
+            <LocalitySearch
+              compact
+              locations={locations}
+              onArea={openArea}
+              onPlace={openPlace}
+              onBrowseAll={browseAll}
+            />
+          </div>
+        )}
+        <nav className="topbar-nav" aria-label="Main navigation">
           <button className="nav-link" onClick={() => setDialog("about")}>
             How it works
           </button>
-        </nav>
-        <button
-          className="button outline header-signin"
-          onClick={() => setDialog(account ? "account" : "signin")}
-        >
-          <Icon name="user" size={17} />
-          {account ? "Your account" : "Sign in"}
-        </button>
-      </header>
-      <main>
-        <section className="hero">
-          <div className="hero-content">
-            <span className="eyebrow">
-              <span className="status-dot" /> A BETTER MOVE STARTS HERE
-            </span>
-            <h1>
-              Know the place.
-              <br />
-              <span>Trust your next move.</span>
-            </h1>
-            <p>
-              Honest experiences from people who’ve been there.
-              <br className="desktop-break" /> Get to know the owner before you
-              call it home.
-            </p>
-            <form
-              className="search-form"
-              role="search"
-              onSubmit={(e) => {
-                e.preventDefault();
-                setQuery(search.trim());
-                setSelected(null);
-              }}
-            >
-              <Icon name="search" size={21} />
-              <input
-                type="search"
-                aria-label="Search by neighbourhood, address, or building"
-                placeholder="Try Indiranagar, Koramangala, or a building…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-              <button className="button" type="submit">
-                Explore <Icon name="arrow" size={17} />
-              </button>
-            </form>
-            <div className="hero-footnote">
-              <Icon name="shield" size={16} />
-              <span>
-                Real experiences. Public reviews. Private personal details.
-              </span>
-            </div>
-          </div>
-          <div className="hero-art" aria-hidden="true">
-            <div className="art-circle" />
-            <div className="art-building building-back">
-              <i />
-              <i />
-              <i />
-              <i />
-              <i />
-              <i />
-            </div>
-            <div className="art-building building-front">
-              <div className="building-roof" />
-              <i />
-              <i />
-              <i />
-              <i />
-              <i />
-              <i />
-              <i />
-              <i />
-              <div className="building-door" />
-            </div>
-            <div className="art-tree tree-one">
-              <span />
-            </div>
-            <div className="art-tree tree-two">
-              <span />
-            </div>
-            <div className="art-ground" />
-            <div className="art-note">
-              <span className="mini-avatar">S</span>
-              <div>
-                <strong>A place that feels like home</strong>
-                <span>
-                  ★★★★★ <small>Real tenant experiences</small>
-                </span>
-              </div>
-            </div>
-            <span className="art-spark spark-one">✧</span>
-            <span className="art-spark spark-two">✧</span>
-          </div>
-        </section>
-        <section className="explore-section" id="explore">
-          <div className="section-heading">
-            <div>
-              <span className="eyebrow">ON THE NEIGHBOURHOOD MAP</span>
-              <h2>A little local knowledge goes a long way.</h2>
-            </div>
-            <span className="city-label">
-              <Icon name="pin" size={16} /> Bengaluru demo
-            </span>
-          </div>
-          <div className="explore-toolbar">
-            <div className="view-label">
-              <Icon name="pin" size={17} />
-              <strong>Explore properties</strong>
-              <span>
-                {loading
-                  ? "Loading…"
-                  : `${visible.length} ${visible.length === 1 ? "place" : "places"} in this area · ${totalReviews} experiences`}
-              </span>
-            </div>
-            <div className="toolbar-actions">
-              <span className="demo-label">Fictional demo properties</span>
-              <button
-                className="button small outline"
-                onClick={() => {
-                  setSelected(null);
-                  setDraft(
-                    view?.center || { latitude: 12.955, longitude: 77.63 },
-                  );
-                }}
-              >
-                <Icon name="pin" size={15} /> Add a place
-              </button>
-            </div>
-          </div>
-          <div className="explore-grid">
-            <aside
-              className="property-list"
-              aria-label="Properties, accessible alternative to the map"
-            >
-              {query && (
-                <div className="search-summary">
-                  Results for “{query}”
-                  <button
-                    className="text-button"
-                    onClick={() => {
-                      setQuery("");
-                      setSearch("");
-                    }}
-                  >
-                    Clear
-                  </button>
-                </div>
-              )}
-              <ErrorNotice error={error} />
-              {error && (
-                <button
-                  className="button outline"
-                  onClick={() => setVersion((v) => v + 1)}
-                >
-                  Try again
-                </button>
-              )}
-              {loading && (
-                <p className="empty-state" role="status">
-                  Finding places and experiences…
-                </p>
-              )}
-              {!loading && !error && !locations.length && (
-                <div className="empty-state">
-                  <Icon name="search" size={30} />
-                  <h3>No places found</h3>
-                  <p>Try a different building or neighbourhood.</p>
-                </div>
-              )}
-              {!loading &&
-                !error &&
-                locations.length > 0 &&
-                !visible.length && (
-                  <div className="empty-state">
-                    <Icon name="pin" size={30} />
-                    <h3>No places in this area</h3>
-                    <p>
-                      Move or zoom out the map, or tap the map to add a place
-                      here.
-                    </p>
-                    <button
-                      className="button small outline"
-                      onClick={() => setFitAll((n) => n + 1)}
-                    >
-                      Show all {locations.length} places
-                    </button>
-                  </div>
-                )}
-              {!loading && visible.length > 1 && (
-                <label className="list-sort">
-                  Sort by
-                  <select
-                    value={sort}
-                    onChange={(e) => setSort(e.target.value as Sort)}
-                  >
-                    <option value="nearest">Nearest to map centre</option>
-                    <option value="reviews">Most reviewed</option>
-                    <option value="rating">Highest rated</option>
-                  </select>
-                </label>
-              )}
-              {!loading && visible.length > 0 && hiddenCount > 0 && (
-                <div className="search-summary area-summary">
-                  {hiddenCount} more {hiddenCount === 1 ? "place" : "places"}{" "}
-                  outside this area
-                  <button
-                    className="text-button"
-                    onClick={() => setFitAll((n) => n + 1)}
-                  >
-                    Show all
-                  </button>
-                </div>
-              )}
-              {!loading &&
-                listed.map((location, index) => (
-                  <button
-                    key={location.id}
-                    className={`property-card ${selected?.id === location.id ? "selected" : ""} ${hovered === location.id ? "hovered" : ""}`}
-                    onClick={() => selectLocation(location)}
-                    onMouseEnter={() => setHovered(location.id)}
-                    onMouseLeave={() => setHovered(null)}
-                    onFocus={() => setHovered(location.id)}
-                    onBlur={() => setHovered(null)}
-                    aria-pressed={selected?.id === location.id}
-                  >
-                    <div
-                      className={`property-thumbnail tone-${index % 4}`}
-                      aria-hidden="true"
-                    >
-                      <Icon name="home" size={31} />
-                      <span>{String(index + 1).padStart(2, "0")}</span>
-                    </div>
-                    <div className="property-card-content">
-                      <div className="property-card-top">
-                        <span className="property-category">RESIDENTIAL</span>
-                        <Icon name="arrow" size={16} />
-                      </div>
-                      <h3>{location.building_name || "Rental property"}</h3>
-                      <p>
-                        <Icon name="pin" size={12} />
-                        {location.address}
-                      </p>
-                      <div className="property-meta">
-                        {location.summary.average_rating !== null ? (
-                          <span className="rating-chip">
-                            ★ {location.summary.average_rating.toFixed(1)}
-                          </span>
-                        ) : (
-                          <span className="new-chip">No tenant rating yet</span>
-                        )}
-                        <span>
-                          {location.summary.tenant_review_count} tenant{" "}
-                          {location.summary.tenant_review_count === 1
-                            ? "review"
-                            : "reviews"}{" "}
-                          · {location.summary.interaction_review_count}{" "}
-                          {location.summary.interaction_review_count === 1
-                            ? "interaction"
-                            : "interactions"}
-                        </span>
-                      </div>
-                    </div>
-                  </button>
-                ))}
-              {!loading && sorted.length > listed.length && (
-                <button
-                  className="button outline show-more"
-                  onClick={() => setShown((n) => n + PAGE_SIZE)}
-                >
-                  Show {Math.min(PAGE_SIZE, sorted.length - listed.length)} more
-                  <span>
-                    {listed.length} of {sorted.length} shown
-                  </span>
-                </button>
-              )}
-              <div className="list-footer">
-                <Icon name="chat" size={20} />
-                <p>
-                  Every experience adds a little clarity.
-                  <br />
-                  <strong>Yours could help someone find home.</strong>
-                </p>
-              </div>
-            </aside>
-            <div className="map-panel">
-              <PropertyMap
-                locations={locations}
-                selected={selected?.id || null}
-                onSelect={selectLocation}
-                draft={draft}
-                onPick={(point) => {
-                  setSelected(null);
-                  setDraft(point);
-                }}
-                onViewChange={setView}
-                fitAll={fitAll}
-                highlighted={hovered}
-                onHover={setHovered}
-              />
-              <div className="map-caption">
-                <span className="status-dot" /> Select a pin to read or write
-                reviews · tap anywhere to add a place
-              </div>
-              {draft && (
-                <div className="draft-card" role="group" aria-label="New place">
-                  <div>
-                    <strong>Add a new place here?</strong>
-                    <span>Drag the pin to the exact building.</span>
-                  </div>
-                  <div className="draft-actions">
-                    <button
-                      className="text-button"
-                      onClick={() => setDraft(null)}
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      className="button small"
-                      onClick={() => requireAccount("place")}
-                    >
-                      Continue <Icon name="arrow" size={15} />
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </section>
-        {selected && (
-          <section
-            className="detail-section"
-            ref={detailRef}
-            aria-label="Selected property details"
+          <button
+            className="button secondary"
+            onClick={() => setDialog(account ? "account" : "signin")}
           >
-            <div className="detail-heading">
-              <div>
-                <span className="eyebrow">GET TO KNOW THE PLACE</span>
-                <h2>{selected.building_name || "Rental property"}</h2>
-                <p className="muted">{selected.address}</p>
-              </div>
-              <button
-                className="icon-button"
-                aria-label="Close property details"
-                onClick={() => {
-                  setSelected(null);
-                  setFlat(null);
-                }}
-              >
-                <Icon name="close" />
-              </button>
+            <Icon name="user" size={18} />
+            <span>{account ? "Your account" : "Sign in"}</span>
+          </button>
+        </nav>
+      </header>
+      {!area ? (
+        <main id="main" className="landing">
+          <section className="hero">
+            <div className="hero-copy">
+              <p className="eyebrow">
+                <Icon name="shield" size={16} /> Honest reviews from tenants
+              </p>
+              <h1>
+                Know your landlord <span>before you sign.</span>
+              </h1>
+              <p className="lead">
+                Read what tenants say about the owner of a flat, from viewing to
+                move-out, then share your own experience.
+              </p>
+              <LocalitySearch
+                locations={locations}
+                onArea={openArea}
+                onPlace={openPlace}
+                onBrowseAll={browseAll}
+              />
+              <ul className="hero-points">
+                <li>
+                  <Icon name="check" size={16} /> Free to read, no sign-up
+                </li>
+                <li>
+                  <Icon name="check" size={16} /> Reviews tied to a specific
+                  flat
+                </li>
+                <li>
+                  <Icon name="check" size={16} /> Your phone number stays
+                  private
+                </li>
+              </ul>
             </div>
-            <div className="flat-row">
-              {flats.length > 0 && (
-                <label className="flat-picker">
-                  Select a flat
-                  <select
-                    value={flat?.id || ""}
-                    onChange={(e) =>
-                      setFlat(
-                        flats.find((f) => f.id === e.target.value) || null,
-                      )
-                    }
-                  >
-                    {flats.map((f) => (
-                      <option key={f.id} value={f.id}>
-                        Flat {f.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              )}
-              {!detailLoading && !detailError && (
-                <button
-                  className="text-button"
-                  onClick={() => requireAccount("flat")}
-                >
-                  {flats.length
-                    ? "Your flat isn’t listed? Add it"
-                    : "Add your flat to review it"}
-                </button>
-              )}
-            </div>
-            <div className="detail-toolbar">
-              <div className="tabs" role="tablist" aria-label="Feedback type">
-                {(["tenant", "interaction"] as const).map((kind, index) => (
-                  <button
-                    key={kind}
-                    id={`${kind}-tab`}
-                    role="tab"
-                    aria-selected={tab === kind}
-                    aria-controls="feedback-panel"
-                    tabIndex={tab === kind ? 0 : -1}
-                    onClick={() => setTab(kind)}
-                    onKeyDown={(e) => {
-                      if (
-                        ["ArrowLeft", "ArrowRight", "Home", "End"].includes(
-                          e.key,
-                        )
-                      ) {
-                        e.preventDefault();
-                        const next =
-                          e.key === "Home"
-                            ? "tenant"
-                            : e.key === "End"
-                              ? "interaction"
-                              : index === 0
-                                ? "interaction"
-                                : "tenant";
-                        setTab(next);
-                        document.getElementById(`${next}-tab`)?.focus();
-                      }
-                    }}
-                  >
-                    {kind === "tenant" ? "Tenant Reviews" : "Interactions"}
-                    <span>
-                      {kind === "tenant" ? reviews.length : interactions.length}
-                    </span>
-                  </button>
-                ))}
-              </div>
-              <button
-                className="button small"
-                disabled={!flat || detailLoading}
-                onClick={writeReview}
-              >
-                Share {tab === "tenant" ? "a review" : "an interaction"}{" "}
-                <Icon name="arrow" size={16} />
-              </button>
-            </div>
-            <div
-              id="feedback-panel"
-              role="tabpanel"
-              aria-labelledby={`${tab}-tab`}
-            >
-              <ErrorNotice error={detailError} />
-              {detailError && (
-                <button
-                  className="text-button"
-                  onClick={() => setVersion((v) => v + 1)}
-                >
-                  Retry
-                </button>
-              )}
-              {detailLoading ? (
-                <p className="empty-state" role="status">
-                  Loading experiences…
+            <HeroPreview />
+          </section>
+          <section className="steps" aria-labelledby="steps-title">
+            <h2 id="steps-title">How it works</h2>
+            <ol>
+              <li>
+                <span className="step-icon">
+                  <Icon name="search" size={22} />
+                </span>
+                <h3>Find the area</h3>
+                <p>
+                  Search a locality or building. The map and list show every
+                  reviewed place nearby.
                 </p>
-              ) : (
-                !detailError && (
-                  <>
-                    {!items.length && (
+              </li>
+              <li>
+                <span className="step-icon">
+                  <Icon name="chat" size={22} />
+                </span>
+                <h3>Hear both sides</h3>
+                <p>
+                  Tenant reviews cover a whole tenancy. Interactions cover
+                  viewings, enquiries and everything before you move in.
+                </p>
+              </li>
+              <li>
+                <span className="step-icon">
+                  <Icon name="plus" size={22} />
+                </span>
+                <h3>Add your experience</h3>
+                <p>
+                  Sign in with your mobile number, pick your flat or pin a new
+                  one, and help the next tenant.
+                </p>
+              </li>
+            </ol>
+          </section>
+          <footer className="site-footer">
+            <span className="brand-name">
+              rental<b>review</b>
+            </span>
+            <span>Good neighbours start with shared experiences.</span>
+            <a href="/api/docs" target="_blank" rel="noreferrer">
+              API documentation
+            </a>
+          </footer>
+        </main>
+      ) : (
+        <main className="explore">
+          <div className="panel" id="panel" ref={panelRef}>
+            {!selected ? (
+              <section
+                className="results"
+                aria-label="Properties, accessible alternative to the map"
+              >
+                <div className="panel-head">
+                  <div className="area-chip">
+                    <span className="area-icon" aria-hidden="true">
+                      <Icon name="pin" size={18} />
+                    </span>
+                    <span>
+                      <strong>{area.name}</strong>
+                      {area.detail && <small>{area.detail}</small>}
+                    </span>
+                    <button className="text-button" onClick={changeArea}>
+                      Change
+                    </button>
+                  </div>
+                  <p className="panel-count" aria-live="polite">
+                    {loading
+                      ? "Loading…"
+                      : `${visible.length} ${visible.length === 1 ? "place" : "places"} in this area · ${totalReviews} experiences`}
+                  </p>
+                  <div className="panel-tools">
+                    {!loading && visible.length > 1 ? (
+                      <label className="list-sort">
+                        Sort by
+                        <select
+                          value={sort}
+                          onChange={(e) => setSort(e.target.value as Sort)}
+                        >
+                          <option value="nearest">Nearest to map centre</option>
+                          <option value="reviews">Most reviewed</option>
+                          <option value="rating">Highest rated</option>
+                        </select>
+                      </label>
+                    ) : (
+                      <span />
+                    )}
+                    <button
+                      className="button secondary small"
+                      onClick={() => {
+                        setSelected(null);
+                        setDraft(view?.center || DEFAULT_CENTER.center);
+                      }}
+                    >
+                      <Icon name="plus" size={16} /> Add a place
+                    </button>
+                  </div>
+                </div>
+                <div className="results-body">
+                  <ErrorNotice error={error} />
+                  {error && (
+                    <button
+                      className="button secondary"
+                      onClick={() => setVersion((v) => v + 1)}
+                    >
+                      Try again
+                    </button>
+                  )}
+                  {loading && (
+                    <ul className="skeleton-list" aria-hidden="true">
+                      <li />
+                      <li />
+                      <li />
+                    </ul>
+                  )}
+                  {!loading && !error && !locations.length && (
+                    <div className="empty-state">
+                      <Icon name="search" size={28} />
+                      <h3>No places found</h3>
+                      <p>Try a different building or neighbourhood.</p>
+                    </div>
+                  )}
+                  {!loading &&
+                    !error &&
+                    locations.length > 0 &&
+                    !visible.length && (
                       <div className="empty-state">
-                        <Icon name="chat" size={30} />
-                        <h3>
-                          No{" "}
-                          {tab === "tenant" ? "tenant reviews" : "interactions"}{" "}
-                          yet
-                        </h3>
+                        <Icon name="pin" size={28} />
+                        <h3>No places in this area</h3>
                         <p>
-                          Be the first to share your experience with this flat.
+                          Move or zoom out the map, or tap the map to add a
+                          place here.
                         </p>
+                        <button
+                          className="button secondary small"
+                          onClick={() => setFitAll((n) => n + 1)}
+                        >
+                          Show all {locations.length} places
+                        </button>
                       </div>
                     )}
-                    <div className="review-grid">
-                      {items.map((item) => (
-                        <article className="review-card" key={item.id}>
-                          <div className="review-card-heading">
-                            <span className="review-avatar">
-                              <Icon
-                                name={tab === "tenant" ? "home" : "chat"}
-                                size={20}
-                              />
-                            </span>
-                            <div>
-                              <strong>Owner: {item.owner_name}</strong>
-                              <span>
-                                {"rating" in item
-                                  ? `Tenancy · ${formatDate(item.tenancy_start_date)} – ${formatDate(item.tenancy_end_date)}`
-                                  : `Interaction · ${formatDate(item.interaction_date)}`}
-                              </span>
-                            </div>
-                            {"rating" in item && (
+                  {!loading && visible.length > 0 && hiddenCount > 0 && (
+                    <p className="area-summary">
+                      {hiddenCount} more{" "}
+                      {hiddenCount === 1 ? "place" : "places"} outside this area
+                      <button
+                        className="text-button"
+                        onClick={() => setFitAll((n) => n + 1)}
+                      >
+                        Show all
+                      </button>
+                    </p>
+                  )}
+                  {!loading && listed.length > 0 && (
+                    <ul className="property-list">
+                      {listed.map((location) => {
+                        const rating = location.summary.average_rating;
+                        const tenant = location.summary.tenant_review_count;
+                        const other = location.summary.interaction_review_count;
+                        return (
+                          <li key={location.id}>
+                            <button
+                              className={`property-card ${hovered === location.id ? "hovered" : ""}`}
+                              onClick={() => selectLocation(location)}
+                              onMouseEnter={() => setHovered(location.id)}
+                              onMouseLeave={() => setHovered(null)}
+                              onFocus={() => setHovered(location.id)}
+                              onBlur={() => setHovered(null)}
+                            >
                               <span
-                                className="review-stars"
-                                aria-label={`${item.rating} out of 5 stars`}
+                                className={`score ${rating == null ? "none" : rating >= 4 ? "good" : rating >= 3 ? "fair" : "poor"}`}
+                                aria-hidden="true"
                               >
-                                {"★".repeat(item.rating)}
-                                <span>{"★".repeat(5 - item.rating)}</span>
+                                {rating == null ? (
+                                  <small>New</small>
+                                ) : (
+                                  <>
+                                    {rating.toFixed(1)}
+                                    <Icon name="star" size={12} />
+                                  </>
+                                )}
                               </span>
-                            )}
+                              <span className="property-body">
+                                <strong>
+                                  {location.building_name || "Rental property"}
+                                </strong>{" "}
+                                <span className="property-address">
+                                  {location.address}
+                                </span>{" "}
+                                <span className="property-meta">
+                                  {rating == null && (
+                                    <span className="sr-only">
+                                      No tenant rating yet.{" "}
+                                    </span>
+                                  )}
+                                  {rating != null && (
+                                    <span className="sr-only">
+                                      Rated {rating.toFixed(1)} of 5.{" "}
+                                    </span>
+                                  )}
+                                  {tenant} tenant{" "}
+                                  {tenant === 1 ? "review" : "reviews"} ·{" "}
+                                  {other}{" "}
+                                  {other === 1 ? "interaction" : "interactions"}
+                                </span>
+                              </span>
+                              <Icon name="chevron" size={18} />
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                  {!loading && sorted.length > listed.length && (
+                    <button
+                      className="button secondary show-more"
+                      onClick={() => setShown((n) => n + PAGE_SIZE)}
+                    >
+                      Show {Math.min(PAGE_SIZE, sorted.length - listed.length)}{" "}
+                      more
+                      <span>
+                        {listed.length} of {sorted.length} shown
+                      </span>
+                    </button>
+                  )}
+                </div>
+              </section>
+            ) : (
+              <section
+                className="detail"
+                aria-label="Selected property details"
+              >
+                <button className="back-link" onClick={closeDetails}>
+                  <Icon name="back" size={18} /> Back to results
+                </button>
+                <header className="detail-head">
+                  <h2>{selected.building_name || "Rental property"}</h2>
+                  <p>
+                    <Icon name="pin" size={16} /> {selected.address}
+                  </p>
+                </header>
+                <dl className="detail-stats">
+                  <div>
+                    <dt>Tenant rating</dt>
+                    <dd>
+                      {selected.summary.average_rating == null ? (
+                        "—"
+                      ) : (
+                        <>
+                          {selected.summary.average_rating.toFixed(1)}
+                          <Icon name="star" size={16} />
+                        </>
+                      )}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Tenant reviews</dt>
+                    <dd>{selected.summary.tenant_review_count}</dd>
+                  </div>
+                  <div>
+                    <dt>Interactions</dt>
+                    <dd>{selected.summary.interaction_review_count}</dd>
+                  </div>
+                </dl>
+                <div className="flat-row">
+                  {flats.length > 0 && (
+                    <label className="flat-picker">
+                      Select a flat
+                      <select
+                        value={flat?.id || ""}
+                        onChange={(e) =>
+                          setFlat(
+                            flats.find((f) => f.id === e.target.value) || null,
+                          )
+                        }
+                      >
+                        {flats.map((f) => (
+                          <option key={f.id} value={f.id}>
+                            Flat {f.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+                  {!detailLoading && !detailError && (
+                    <button
+                      className="text-button"
+                      onClick={() => requireAccount("flat")}
+                    >
+                      {flats.length
+                        ? "Your flat isn’t listed? Add it"
+                        : "Add your flat to review it"}
+                    </button>
+                  )}
+                </div>
+                <div className="tabs" role="tablist" aria-label="Feedback type">
+                  {(["tenant", "interaction"] as const).map((kind, index) => (
+                    <button
+                      key={kind}
+                      id={`${kind}-tab`}
+                      role="tab"
+                      aria-selected={tab === kind}
+                      aria-controls="feedback-panel"
+                      tabIndex={tab === kind ? 0 : -1}
+                      onClick={() => setTab(kind)}
+                      onKeyDown={(e) => {
+                        if (
+                          ["ArrowLeft", "ArrowRight", "Home", "End"].includes(
+                            e.key,
+                          )
+                        ) {
+                          e.preventDefault();
+                          const next =
+                            e.key === "Home"
+                              ? "tenant"
+                              : e.key === "End"
+                                ? "interaction"
+                                : index === 0
+                                  ? "interaction"
+                                  : "tenant";
+                          setTab(next);
+                          document.getElementById(`${next}-tab`)?.focus();
+                        }
+                      }}
+                    >
+                      {kind === "tenant" ? "Tenant Reviews" : "Interactions"}
+                      <span className="count">
+                        {kind === "tenant"
+                          ? reviews.length
+                          : interactions.length}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+                <button
+                  className="button block"
+                  disabled={!flat || detailLoading}
+                  onClick={writeReview}
+                >
+                  <Icon name="plus" size={18} />
+                  Share {tab === "tenant" ? "a review" : "an interaction"}
+                </button>
+                <div
+                  id="feedback-panel"
+                  role="tabpanel"
+                  aria-labelledby={`${tab}-tab`}
+                >
+                  <ErrorNotice error={detailError} />
+                  {detailError && (
+                    <button
+                      className="text-button"
+                      onClick={() => setVersion((v) => v + 1)}
+                    >
+                      Retry
+                    </button>
+                  )}
+                  {detailLoading ? (
+                    <ul className="skeleton-list" aria-hidden="true">
+                      <li />
+                      <li />
+                    </ul>
+                  ) : (
+                    !detailError && (
+                      <>
+                        {!items.length && (
+                          <div className="empty-state">
+                            <Icon name="chat" size={28} />
+                            <h3>
+                              No{" "}
+                              {tab === "tenant"
+                                ? "tenant reviews"
+                                : "interactions"}{" "}
+                              yet
+                            </h3>
+                            <p>
+                              Be the first to share your experience with this
+                              flat.
+                            </p>
                           </div>
-                          <p>
-                            {"feedback" in item
-                              ? item.feedback
-                              : item.description}
-                          </p>
-                          <small>
-                            Shared {formatDate(item.submitted_at)}
-                            {"editing_deadline" in item &&
-                              ` · Editing closes ${formatDate(item.editing_deadline)}`}
-                          </small>
-                        </article>
-                      ))}
-                    </div>
-                  </>
-                )
-              )}
-            </div>
-          </section>
-        )}
-        <section className="values-strip">
-          <div>
-            <Icon name="chat" size={24} />
-            <div>
-              <h3>From people, for people.</h3>
-              <p>Tenant stories and everyday interactions.</p>
-            </div>
+                        )}
+                        <div className="review-list">
+                          {items.map((item) => (
+                            <article className="review-card" key={item.id}>
+                              <header>
+                                <span className="avatar" aria-hidden="true">
+                                  {item.owner_name
+                                    .trim()
+                                    .charAt(0)
+                                    .toUpperCase()}
+                                </span>
+                                <span className="review-who">
+                                  <strong>Owner: {item.owner_name}</strong>
+                                  <span>
+                                    {"rating" in item
+                                      ? `Tenancy · ${formatDate(item.tenancy_start_date)} – ${formatDate(item.tenancy_end_date)}`
+                                      : `Interaction · ${formatDate(item.interaction_date)}`}
+                                  </span>
+                                </span>
+                                {"rating" in item && (
+                                  <span
+                                    className="stars"
+                                    role="img"
+                                    aria-label={`${item.rating} out of 5 stars`}
+                                  >
+                                    {[1, 2, 3, 4, 5].map((n) => (
+                                      <span
+                                        key={n}
+                                        className={n <= item.rating ? "on" : ""}
+                                      >
+                                        <Icon name="star" size={14} />
+                                      </span>
+                                    ))}
+                                  </span>
+                                )}
+                              </header>
+                              <p>
+                                {"feedback" in item
+                                  ? item.feedback
+                                  : item.description}
+                              </p>
+                              <small>
+                                Shared {formatDate(item.submitted_at)}
+                                {"editing_deadline" in item &&
+                                  ` · Editing closes ${formatDate(item.editing_deadline)}`}
+                              </small>
+                            </article>
+                          ))}
+                        </div>
+                      </>
+                    )
+                  )}
+                </div>
+              </section>
+            )}
           </div>
-          <div>
-            <Icon name="shield" size={24} />
-            <div>
-              <h3>Your experience. Your privacy.</h3>
-              <p>Personal details and documents stay private.</p>
-            </div>
+          <div className="map-pane">
+            <PropertyMap
+              locations={locations}
+              selected={selected?.id || null}
+              onSelect={selectLocation}
+              draft={draft}
+              onPick={(point) => {
+                setSelected(null);
+                setDraft(point);
+              }}
+              onViewChange={setView}
+              fitAll={fitAll}
+              focus={focus}
+              highlighted={hovered}
+              onHover={setHovered}
+            />
+            {!draft && (
+              <p className="map-hint">
+                <Icon name="pin" size={14} /> Tap a pin to read reviews · tap
+                anywhere to add a place
+              </p>
+            )}
+            {draft && (
+              <div className="draft-card" role="group" aria-label="New place">
+                <div>
+                  <strong>Add a new place here?</strong>
+                  <span>Drag the pin onto the exact building.</span>
+                </div>
+                <div className="draft-actions">
+                  <button
+                    className="button ghost small"
+                    onClick={() => setDraft(null)}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    className="button small"
+                    onClick={() => requireAccount("place")}
+                  >
+                    Continue <Icon name="arrow" size={16} />
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
-          <div>
-            <Icon name="home" size={24} />
-            <div>
-              <h3>A more informed next chapter.</h3>
-              <p>A little knowledge before a big decision.</p>
-            </div>
-          </div>
-        </section>
-      </main>
-      <footer className="site-footer">
-        <a className="brand" href="/">
-          <Icon name="home" size={20} />
-          <span>
-            rental<span className="brand-light">review</span>.
-          </span>
-        </a>
-        <span>Good neighbours start with shared experiences.</span>
-        <a href="/api/docs" target="_blank" rel="noreferrer">
-          API documentation ↗
-        </a>
-      </footer>
+        </main>
+      )}
       {notice && (
         <div className="toast" role="status">
+          <Icon name="check" size={18} />
           {notice}
         </div>
       )}
@@ -926,4 +950,65 @@ function formatDate(value: string) {
     year: "numeric",
     day: "numeric",
   });
+}
+
+/** Illustrative preview of the product for the landing page. */
+function HeroPreview() {
+  return (
+    <div className="hero-preview" aria-hidden="true">
+      <svg viewBox="0 0 480 400" className="preview-map">
+        <rect width="480" height="400" rx="24" className="pm-land" />
+        <path
+          d="M0 260 C120 230 180 300 300 270 S440 220 480 240 V400 H0Z"
+          className="pm-park"
+        />
+        <circle cx="390" cy="90" r="58" className="pm-water" />
+        <path d="M-10 150 L490 110" className="pm-road major" />
+        <path d="M140 -10 L190 410" className="pm-road major" />
+        <path d="M-10 300 L490 330" className="pm-road" />
+        <path d="M330 -10 L300 410" className="pm-road" />
+        <path d="M60 -10 L80 410" className="pm-road" />
+        <path d="M-10 60 L490 30" className="pm-road" />
+        <g className="pm-pin">
+          <rect x="196" y="160" width="62" height="30" rx="15" />
+          <text x="227" y="180">
+            ★ 4.6
+          </text>
+        </g>
+        <g className="pm-pin muted">
+          <rect x="66" y="210" width="62" height="30" rx="15" />
+          <text x="97" y="230">
+            ★ 3.9
+          </text>
+        </g>
+        <g className="pm-pin muted">
+          <rect x="300" y="250" width="62" height="30" rx="15" />
+          <text x="331" y="270">
+            ★ 4.2
+          </text>
+        </g>
+        <g className="pm-cluster">
+          <circle cx="300" cy="150" r="20" />
+          <text x="300" y="155">
+            7
+          </text>
+        </g>
+      </svg>
+      <div className="preview-card">
+        <div className="preview-card-head">
+          <span className="avatar">A</span>
+          <span>
+            <strong>Owner: Anita R.</strong>
+            <small>Tenancy · 2 years</small>
+          </span>
+          <span className="stars on" aria-hidden="true">
+            ★★★★★
+          </span>
+        </div>
+        <p>
+          “Repairs were sorted within a day and the deposit came back in full.”
+        </p>
+      </div>
+    </div>
+  );
 }

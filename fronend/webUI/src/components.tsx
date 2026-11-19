@@ -64,6 +64,23 @@ export function Icon({ name, size = 20 }: { name: string; size?: number }) {
         <path d="M4 22v-3a8 8 0 0 1 16 0v3" />
       </>
     ),
+    back: <path d="M15 5l-7 7 7 7" />,
+    chevron: <path d="m9 5 7 7-7 7" />,
+    plus: <path d="M12 5v14M5 12h14" />,
+    check: <path d="m5 12.5 4.5 4.5L19 7.5" />,
+    star: (
+      <path
+        d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9Z"
+        fill="currentColor"
+        stroke="none"
+      />
+    ),
+    locate: (
+      <>
+        <circle cx="12" cy="12" r="4" />
+        <path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
+      </>
+    ),
   };
   return (
     <svg
@@ -72,7 +89,7 @@ export function Icon({ name, size = 20 }: { name: string; size?: number }) {
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth="1.7"
+      strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden="true"

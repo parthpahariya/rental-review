@@ -123,10 +123,17 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+async function browse(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(
+    screen.getByRole("button", { name: /Browse all places on the map/ }),
+  );
+}
+
 describe("Rental Review", () => {
   it("keeps the selected flat while switching accessible feedback tabs", async () => {
     const user = userEvent.setup();
     render(<App />);
+    await browse(user);
     await user.click(
       await screen.findByRole("button", { name: /Parkside Residences/ }),
     );
@@ -140,20 +147,106 @@ describe("Rental Review", () => {
     );
     expect(screen.getByText("A transparent viewing.")).toBeInTheDocument();
     expect(screen.getByText("Owner: A different owner")).toBeInTheDocument();
-    expect(screen.getByRole("combobox")).toHaveValue("flat-1");
+    expect(screen.getByRole("combobox", { name: /Select a flat/ })).toHaveValue(
+      "flat-1",
+    );
   });
 
-  it("shows an empty search state and lets the visitor clear it", async () => {
+  it("asks for a locality before showing the map", async () => {
+    const photon = {
+      features: [
+        {
+          geometry: { coordinates: [77.6404672, 12.9732913] },
+          properties: { name: "Indiranagar", type: "locality" },
+        },
+        {
+          geometry: { coordinates: [77.6443636, 12.9810684] },
+          properties: { name: "Indiranagar", type: "district" },
+        },
+        {
+          geometry: { coordinates: [79.9, 6.9] },
+          properties: {
+            name: "Indira Lane",
+            type: "locality",
+            countrycode: "LK",
+          },
+        },
+      ],
+    };
+    const base = fetch as unknown as (input: string) => Promise<Response>;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: string) =>
+        input.startsWith("https://photon.komoot.io/")
+          ? Promise.resolve(new Response(JSON.stringify(photon)))
+          : base(input),
+      ),
+    );
     const user = userEvent.setup();
     render(<App />);
-    const input = screen.getByRole("searchbox", { hidden: true });
-    await user.type(input, "Unknown");
-    await user.click(screen.getByRole("button", { name: /^Explore/ }));
-    expect(await screen.findByText("No places found")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Clear" }));
     expect(
-      await screen.findByRole("button", { name: /Parkside Residences/ }),
+      screen.queryByLabelText(/Interactive rental location map/),
+    ).not.toBeInTheDocument();
+    await user.type(
+      screen.getByRole("combobox", { name: /Search for a locality/ }),
+      "Indira",
+    );
+    // Reviewed places in the locality are suggested first.
+    expect(
+      await screen.findByRole("option", { name: /^Parkside Residences/ }),
     ).toBeInTheDocument();
+    const localities = await screen.findAllByRole("option", {
+      name: /^Indiranagar/,
+    });
+    // The same locality listed twice by OpenStreetMap is shown once.
+    expect(localities).toHaveLength(1);
+    // Results outside India are dropped.
+    expect(
+      screen.queryByRole("option", { name: /Indira Lane/ }),
+    ).not.toBeInTheDocument();
+    await user.click(localities[0]);
+    expect(
+      screen.getByLabelText(/Interactive rental location map/),
+    ).toBeInTheDocument();
+    expect(document.querySelector(".area-chip strong")).toHaveTextContent(
+      "Indiranagar",
+    );
+    const geocode = vi
+      .mocked(fetch)
+      .mock.calls.map(([url]) => String(url))
+      .find((url) => url.includes("photon"));
+    expect(geocode).toContain("q=Indira");
+    expect(geocode).toContain("bbox=68.1%2C6.5%2C97.5%2C35.7");
+  });
+
+  it("jumps straight to a reviewed place matched by the locality search", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        ((base) => (input: string) =>
+          input.startsWith("https://photon.komoot.io/")
+            ? Promise.resolve(new Response(JSON.stringify({ features: [] })))
+            : base(input))(
+          fetch as unknown as (input: string) => Promise<Response>,
+        ),
+      ),
+    );
+    const user = userEvent.setup();
+    render(<App />);
+    await waitFor(() =>
+      expect(fetch).toHaveBeenCalledWith(
+        expect.stringContaining("/locations"),
+        expect.anything(),
+      ),
+    );
+    await user.type(
+      screen.getByRole("combobox", { name: /Search for a locality/ }),
+      "Parkside",
+    );
+    await user.click(
+      await screen.findByRole("option", { name: /Parkside Residences/ }),
+    );
+    expect(await screen.findByText("A helpful owner.")).toBeInTheDocument();
   });
 
   it("completes development OTP registration and opens an account session", async () => {
@@ -224,6 +317,7 @@ describe("Rental Review", () => {
     setToken("test-session");
     const user = userEvent.setup();
     render(<App />);
+    await browse(user);
     await screen.findByRole("button", { name: /Parkside Residences/ });
     await user.click(screen.getByRole("button", { name: /Add a place/ }));
     await user.click(screen.getByRole("button", { name: /Continue/ }));
@@ -256,6 +350,7 @@ describe("Rental Review", () => {
     };
     const user = userEvent.setup();
     render(<App />);
+    await browse(user);
     expect(
       await screen.findByText("No places in this area"),
     ).toBeInTheDocument();
@@ -268,9 +363,8 @@ describe("Rental Review", () => {
       bounds: { west: 76.9, south: 11.9, east: 77.1, north: 12.1 },
     };
     render(<App />);
-    await user.click(
-      await screen.findByRole("button", { name: /Parkside Residences/ }),
-    );
+    await browse(user);
+    await screen.findByRole("button", { name: /Parkside Residences/ });
     expect(screen.getByText(/1 place in this area/)).toBeInTheDocument();
   });
 
@@ -296,6 +390,7 @@ describe("Rental Review", () => {
     );
     const user = userEvent.setup();
     render(<App />);
+    await browse(user);
     const cards = () => screen.getAllByRole("button", { name: /Tower \d+/ });
     await screen.findByRole("button", { name: /Tower 0\b/ });
     expect(cards()).toHaveLength(20);
@@ -326,7 +421,9 @@ describe("Rental Review", () => {
         ),
       ),
     );
+    const user = userEvent.setup();
     render(<App />);
+    await browse(user);
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Database unavailable.",
     );

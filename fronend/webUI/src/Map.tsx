@@ -11,6 +11,13 @@ export type Bounds = {
   north: number;
 };
 export type MapView = { center: Point; bounds: Bounds };
+/** A place to move the map to; change `key` to move there again. */
+export type Focus = {
+  key: number;
+  center: Point;
+  bounds?: Bounds;
+  zoom?: number;
+};
 
 export default function PropertyMap({
   locations,
@@ -22,6 +29,7 @@ export default function PropertyMap({
   fitAll = 0,
   highlighted = null,
   onHover,
+  focus = null,
 }: {
   locations: Location[];
   selected: string | null;
@@ -34,6 +42,7 @@ export default function PropertyMap({
   /** Location to emphasise, e.g. while its list card is hovered. */
   highlighted?: string | null;
   onHover?: (id: string | null) => void;
+  focus?: Focus | null;
 }) {
   const element = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
@@ -110,7 +119,7 @@ export default function PropertyMap({
       const rating = location.summary.average_rating;
       const icon = L.divIcon({
         className: "",
-        html: `<span class="map-pin ${active ? "active" : ""}">${rating == null ? "↗" : `★ ${rating.toFixed(1)}`}</span>`,
+        html: `<span class="map-pin ${active ? "active" : ""}">${rating == null ? "New" : `★ ${rating.toFixed(1)}`}</span>`,
         iconSize: [68, 38],
         iconAnchor: [34, 38],
       });
@@ -128,16 +137,28 @@ export default function PropertyMap({
     });
     markers.current.addLayers(layers);
     applyHighlight(highlight.current);
-    if (locations.length && !selected && !draft)
-      map.current.fitBounds(
-        L.latLngBounds(locations.map((l) => [l.latitude, l.longitude])),
-        { padding: [70, 70], maxZoom: 14 },
-      );
     const marker = selected ? byId.current.get(selected) : undefined;
     // Zooms in far enough to pull the selected pin out of its cluster.
     if (marker) markers.current.zoomToShowLayer(marker);
-    // Only re-fit when the result set or selection changes, not when a draft moves.
   }, [locations, selected]);
+  useEffect(() => {
+    if (!focus || !map.current) return;
+    const b = focus.bounds;
+    // Tiny OpenStreetMap extents (a single block) would zoom in too far.
+    if (b && b.north - b.south > 0.004)
+      map.current.fitBounds(
+        [
+          [b.south, b.west],
+          [b.north, b.east],
+        ],
+        { padding: [30, 30], maxZoom: 16 },
+      );
+    else
+      map.current.setView(
+        [focus.center.latitude, focus.center.longitude],
+        focus.zoom ?? 15,
+      );
+  }, [focus?.key]);
   useEffect(() => {
     highlight.current = highlighted;
     applyHighlight(highlighted);
