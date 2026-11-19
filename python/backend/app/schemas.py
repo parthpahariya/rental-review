@@ -123,3 +123,25 @@ class DecisionBody(Body):
 
 class AttachmentBody(Body):
     file_id: UUID
+
+
+ShortText = Annotated[
+    str, StringConstraints(strict=True, strip_whitespace=True, min_length=1, max_length=200)
+]
+FlatLabel = Annotated[
+    str, StringConstraints(strict=True, strip_whitespace=True, min_length=1, max_length=100)
+]
+
+
+class FlatBody(Body):
+    label: FlatLabel
+
+
+class LocationBody(Body):
+    address: Annotated[
+        str, StringConstraints(strict=True, strip_whitespace=True, min_length=1, max_length=500)
+    ]
+    building_name: ShortText | None = None
+    latitude: Annotated[float, Field(strict=True, ge=-90, le=90, allow_inf_nan=False)]
+    longitude: Annotated[float, Field(strict=True, ge=-180, le=180, allow_inf_nan=False)]
+    flat_label: FlatLabel

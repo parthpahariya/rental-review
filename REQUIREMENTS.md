@@ -166,6 +166,6 @@ Only unresolved questions are listed below. Once a decision is made, record it i
 - **Registration:** Which account fields are required in addition to the verified mobile number?
 - **Mobile OTP:** Which SMS provider and countries are supported, and what OTP expiry, resend cooldown, and request and verification limits apply?
 - **Interactions:** Can authors edit or delete interaction reviews, or link them to a tenant review?
-- **Property records:** How are locations and flats added, identified, and kept free of duplicates?
-- **Map clicks:** Is selecting a property marker sufficient, or should clicking any map point also find nearby reviews? If nearby search is needed, what radius applies?
+- **Property records:** Signed-in users add locations by pinning an empty map point and add flats to existing locations. A new pin within 30 metres of an existing location and a repeated flat label are rejected. Merging or correcting duplicates that slip through (for example, a building pinned twice 40 metres apart) is still undecided.
+- **Map clicks (decided):** Selecting a marker opens its flats and reviews. Selecting an empty point drops a draggable pin for adding a new place, and lists existing places within 100 metres so users can review those instead.
 - **Map service:** Which map provider and geographic coverage should be used?

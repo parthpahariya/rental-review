@@ -55,7 +55,7 @@ Protected endpoints return `401 UNAUTHENTICATED` for missing, expired, or revoke
 | `403` | `FORBIDDEN`, `ACCOUNT_INACTIVE`, `EDIT_WINDOW_CLOSED` |
 | `404` | `NOT_FOUND` |
 | `405` | `METHOD_NOT_ALLOWED` (include the route's `Allow` header) |
-| `409` | `INTERACTION_REVIEW_ALREADY_EXISTS`, `TENANCY_PERIOD_CONFLICT`, `OTP_ALREADY_USED`, `OTP_REPLACED`, `COMPLETION_TOKEN_USED`, `ACCOUNT_ALREADY_EXISTS`, `AUTH_FLOW_CHANGED`, `FILE_NOT_READY`, `FILE_ALREADY_ATTACHED`, `FILE_UNAVAILABLE`, `REQUEST_ALREADY_PENDING`, `REQUEST_ALREADY_DECIDED` |
+| `409` | `INTERACTION_REVIEW_ALREADY_EXISTS`, `LOCATION_ALREADY_EXISTS`, `FLAT_ALREADY_EXISTS`, `TENANCY_PERIOD_CONFLICT`, `OTP_ALREADY_USED`, `OTP_REPLACED`, `COMPLETION_TOKEN_USED`, `ACCOUNT_ALREADY_EXISTS`, `AUTH_FLOW_CHANGED`, `FILE_NOT_READY`, `FILE_ALREADY_ATTACHED`, `FILE_UNAVAILABLE`, `REQUEST_ALREADY_PENDING`, `REQUEST_ALREADY_DECIDED` |
 | `410` | `OTP_EXPIRED` |
 | `413` | `FILE_TOO_LARGE` |
 | `415` | `UNSUPPORTED_MEDIA_TYPE` |
@@ -212,7 +212,21 @@ The initial policy has `proof_required: false`. The server selects the policy ef
 
 With `reviewed_only=true`, include a location when any of its flats has at least one visible tenant review **or** interaction review. Do not require tenant reviews for a marker. Counts and average ratings are scoped to the returned location or flat, across its reviews. A location with several flats leads to flat selection; both feedback tabs use the chosen flat ID. Clients must follow `next_cursor` to obtain all matching markers. The same location results support the accessible text list.
 
-Use `reviewed_only=false` to find existing locations for a first review. Unknown parent IDs in nested collection endpoints return `404`. Creating or merging locations and flats is deferred until the record creation and deduplication workflow is decided; these endpoints select already provisioned records.
+Use `reviewed_only=false` to find existing locations for a first review. Unknown parent IDs in nested collection endpoints return `404`. Merging duplicate locations or flats is not supported.
+
+### `POST /locations` — Active user
+
+Adds a new map pin together with its first flat, so a user can review a place that is not yet listed.
+
+Request: `{ "address": nonblank_string (≤500), "building_name": nonblank_string (≤200) | null, "latitude": number, "longitude": number, "flat_label": nonblank_string (≤100) }`. `building_name` is optional. Coordinates must be finite WGS84 values.
+
+`201`: `{ "data": Flat }`; `Location: /api/v1/flats/{flat_id}`. Errors: `409 LOCATION_ALREADY_EXISTS` when an existing location lies within 30 metres of the supplied coordinates (users should review or add a flat to that location instead). Creation is serialized so two concurrent pins at the same spot cannot both succeed. The new location appears with `reviewed_only=false` immediately, and with the default filter once it has a review.
+
+### `POST /locations/{location_id}/flats` — Active user
+
+Request: `{ "label": nonblank_string (≤100) }`.
+
+`201`: `{ "data": Flat }`; `Location: /api/v1/flats/{flat_id}`. Errors: `404 NOT_FOUND` for an unknown location; `409 FLAT_ALREADY_EXISTS` when the location already has a flat with the same label, compared case-insensitively after trimming.
 
 ## Tenant reviews
 

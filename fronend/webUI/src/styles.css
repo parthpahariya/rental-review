@@ -1447,3 +1447,180 @@ body:has(dialog[open]) {
     transition: none !important;
   }
 }
+
+/* Adding a new place from the map */
+.leaflet-container {
+  cursor: crosshair;
+}
+.leaflet-marker-icon {
+  cursor: pointer;
+}
+.map-pin.draft {
+  background: #c8693d;
+  color: white;
+  border-color: #c8693d;
+  cursor: grab;
+}
+.map-pin.draft:after {
+  border-color: #c8693d;
+}
+.draft-card {
+  position: absolute;
+  left: 50%;
+  bottom: 22px;
+  transform: translateX(-50%);
+  z-index: 500;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  width: max-content;
+  max-width: calc(100% - 32px);
+  padding: 12px 14px 12px 16px;
+  background: white;
+  border: 1px solid #e1e5d7;
+  border-radius: 10px;
+  box-shadow: 0 6px 20px #33412922;
+}
+.draft-card > div:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 13px;
+}
+.draft-card span {
+  font-size: 11px;
+  color: #7c8771;
+}
+.draft-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.flat-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  margin: 12px 0 24px;
+}
+.flat-row .flat-picker {
+  margin: 0;
+}
+.nearby-places {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 18px;
+  padding: 12px;
+  background: #f6f8ef;
+  border: 1px solid #e1e5d7;
+  border-radius: 8px;
+  font-size: 12px;
+}
+.nearby-place {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid #e1e5d7;
+  border-radius: 6px;
+  background: white;
+  text-align: left;
+  font-size: 13px;
+  color: inherit;
+}
+.nearby-place small {
+  display: block;
+  font-size: 11px;
+  color: #7c8771;
+}
+@media (max-width: 640px) {
+  .draft-card {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    bottom: 12px;
+  }
+  .draft-actions {
+    justify-content: space-between;
+  }
+  .toolbar-actions .demo-label {
+    display: none;
+  }
+}
+.area-summary {
+  font-size: 12px;
+  color: #7c8771;
+}
+
+/* Dense areas: clusters, list sorting and list/map hover linking */
+.map-cluster {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #294f40;
+  color: white;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1;
+  border: 3px solid #ffffffd9;
+  box-shadow:
+    0 0 0 6px #294f4026,
+    0 4px 10px #1f382940;
+  transition: transform 0.15s ease;
+}
+.map-pin {
+  transition: transform 0.15s ease;
+}
+.map-pin.map-highlight,
+.map-cluster.map-highlight {
+  transform: scale(1.15);
+  background: #294f40;
+  color: white;
+  border-color: #294f40;
+}
+.map-pin.map-highlight:after {
+  border-color: #294f40;
+}
+.map-cluster.map-highlight {
+  background: #c8693d;
+}
+.property-card.hovered {
+  background: #f8faf2;
+}
+.list-sort {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 15px 4px;
+  font-size: 12px;
+  color: #7c8771;
+}
+.list-sort select {
+  padding: 6px 22px 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fafbf5;
+  font-size: 12px;
+}
+.show-more {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  margin: 16px auto;
+}
+.show-more span {
+  font-size: 10px;
+  font-weight: 400;
+  color: #8a977e;
+}

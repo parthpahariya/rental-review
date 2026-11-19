@@ -2,16 +2,20 @@ import math
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy import exists, func, or_, select
 from sqlalchemy.orm import Session
 
-from .common import fail, fields, get_or_404, page
+from .common import current_user, fail, fields, get_or_404, lock, page
 from .database import get_db
-from .models import Flat, Interaction, Location, ProofPolicy, TenantReview, now
+from .models import Flat, Interaction, Location, ProofPolicy, TenantReview, User, now
+from .schemas import FlatBody, LocationBody
 
 router = APIRouter()
 Limit = Annotated[int, Query(ge=1, le=100)]
+# A new pin closer than this to an existing location is treated as the same place.
+DUPLICATE_RADIUS_METRES = 30
+EARTH_RADIUS_METRES = 6_371_000
 
 
 def summary(db, flat_ids):
@@ -154,3 +158,85 @@ def flats(
 @router.get("/flats/{flat_id}")
 def flat(flat_id: UUID, db: Session = Depends(get_db)):
     return {"data": flat_data(db, get_or_404(db, Flat, flat_id))}
+
+
+def distance_metres(lat1, lon1, lat2, lon2):
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dp, dl = p2 - p1, math.radians(lon2 - lon1)
+    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return 2 * EARTH_RADIUS_METRES * math.asin(math.sqrt(a))
+
+
+def nearest_location(db, latitude, longitude, radius=DUPLICATE_RADIUS_METRES):
+    # Prefilter with a bounding box, then measure exact distance.
+    dlat = math.degrees(radius / EARTH_RADIUS_METRES)
+    dlon = dlat / max(math.cos(math.radians(latitude)), 0.01)
+    candidates = db.scalars(
+        select(Location).where(
+            Location.latitude.between(latitude - dlat, latitude + dlat),
+            Location.longitude.between(longitude - dlon, longitude + dlon),
+        )
+    ).all()
+    scored = [
+        (distance_metres(latitude, longitude, row.latitude, row.longitude), row)
+        for row in candidates
+    ]
+    scored = [item for item in scored if item[0] <= radius]
+    return min(scored, key=lambda item: item[0])[1] if scored else None
+
+
+def add_flat(db, location_id, label):
+    if db.scalar(
+        select(Flat.id).where(
+            Flat.location_id == location_id, func.lower(Flat.label) == label.lower()
+        )
+    ):
+        fail(409, "FLAT_ALREADY_EXISTS", f"Flat {label} is already listed at this place.")
+    row = Flat(location_id=location_id, label=label)
+    db.add(row)
+    db.flush()
+    return row
+
+
+@router.post("/locations", status_code=201)
+def create_location(
+    body: LocationBody,
+    response: Response,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    # Serialize creation so two people pinning the same spot cannot both succeed.
+    lock(db, "locations:create")
+    existing = nearest_location(db, body.latitude, body.longitude)
+    if existing:
+        fail(
+            409,
+            "LOCATION_ALREADY_EXISTS",
+            f"{existing.building_name or existing.address} is already on the map here. "
+            "Review it instead, or add your flat to it.",
+        )
+    location = Location(
+        address=body.address,
+        building_name=body.building_name,
+        latitude=body.latitude,
+        longitude=body.longitude,
+    )
+    db.add(location)
+    db.flush()
+    flat = add_flat(db, location.id, body.flat_label)
+    response.headers["Location"] = f"/api/v1/flats/{flat.id}"
+    return {"data": flat_data(db, flat)}
+
+
+@router.post("/locations/{location_id}/flats", status_code=201)
+def create_flat(
+    location_id: UUID,
+    body: FlatBody,
+    response: Response,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    get_or_404(db, Location, location_id, True)
+    flat = add_flat(db, location_id, body.label)
+    response.headers["Location"] = f"/api/v1/flats/{flat.id}"
+    return {"data": flat_data(db, flat)}

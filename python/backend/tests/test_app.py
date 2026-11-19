@@ -360,3 +360,69 @@ def test_production_rejects_development_sms_and_default_secret():
 
     with pytest.raises(ValueError):
         Settings(app_env="production", sms_backend="development")
+
+
+def place_payload(**changes):
+    return {
+        "address": "12 New Road, Bengaluru",
+        "building_name": "Fresh Pin House",
+        "latitude": 12.9,
+        "longitude": 77.5,
+        "flat_label": "2B",
+        **changes,
+    }
+
+
+def test_new_pin_creates_location_and_flat_for_reviews(client, auth):
+    assert client.post("/api/v1/locations", json=place_payload()).status_code == 401
+    response = client.post("/api/v1/locations", headers=auth, json=place_payload())
+    assert response.status_code == 201, response.text
+    flat = response.json()["data"]
+    assert response.headers["location"] == f"/api/v1/flats/{flat['id']}"
+    assert flat["label"] == "2B"
+    assert flat["location"]["building_name"] == "Fresh Pin House"
+    assert flat["summary"]["tenant_review_count"] == 0
+    create_review(client, flat["id"], auth)
+    markers = client.get("/api/v1/locations").json()["data"]
+    assert [m["id"] for m in markers] == [flat["location"]["id"]]
+    assert markers[0]["summary"]["tenant_review_count"] == 1
+
+
+def test_new_pin_rejects_nearby_duplicates_and_bad_input(client, auth, flat_id):
+    # The flat_id fixture sits at 12.97, 77.64; ~10 m away is the same place.
+    near = client.post(
+        "/api/v1/locations", headers=auth, json=place_payload(latitude=12.97009, longitude=77.64)
+    )
+    assert near.status_code == 409
+    assert near.json()["error"]["code"] == "LOCATION_ALREADY_EXISTS"
+    far = client.post(
+        "/api/v1/locations", headers=auth, json=place_payload(latitude=12.9706, longitude=77.64)
+    )
+    assert far.status_code == 201, far.text
+    for bad in (
+        {"address": "  "},
+        {"flat_label": ""},
+        {"latitude": 91},
+        {"longitude": "77"},
+        {"owner_id": "x"},
+    ):
+        response = client.post("/api/v1/locations", headers=auth, json=place_payload(**bad))
+        assert response.status_code == 422, bad
+
+
+def test_add_flat_to_existing_pin(client, auth, flat_id):
+    location_id = client.get(f"/api/v1/flats/{flat_id}").json()["data"]["location"]["id"]
+    url = f"/api/v1/locations/{location_id}/flats"
+    assert client.post(url, json={"label": "102"}).status_code == 401
+    response = client.post(url, headers=auth, json={"label": " 102 "})
+    assert response.status_code == 201, response.text
+    assert response.json()["data"]["label"] == "102"
+    duplicate = client.post(url, headers=auth, json={"label": "101"})
+    assert duplicate.status_code == 409
+    assert duplicate.json()["error"]["code"] == "FLAT_ALREADY_EXISTS"
+    missing = client.post(
+        f"/api/v1/locations/{uuid.uuid4()}/flats", headers=auth, json={"label": "1"}
+    )
+    assert missing.status_code == 404
+    labels = [f["label"] for f in client.get(url).json()["data"]]
+    assert sorted(labels) == ["101", "102"]

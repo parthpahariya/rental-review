@@ -15,8 +15,10 @@ import type {
   Deletion,
   Flat,
   Interaction,
+  Location,
   Review,
 } from "./api";
+import type { Point } from "./Map";
 
 export function Icon({ name, size = 20 }: { name: string; size?: number }) {
   const paths: Record<string, ReactNode> = {
@@ -840,6 +842,155 @@ export function AccountPanel({
           </div>
         </>
       )}
+    </Modal>
+  );
+}
+
+export function AddPlaceForm({
+  point,
+  nearby,
+  onClose,
+  onUseExisting,
+  onCreated,
+}: {
+  point: Point;
+  nearby: Location[];
+  onClose: () => void;
+  onUseExisting: (location: Location) => void;
+  onCreated: (flat: Flat) => void;
+}) {
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  async function submit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setError("");
+    setBusy(true);
+    const form = new FormData(e.currentTarget);
+    const building = String(form.get("building_name") || "").trim();
+    try {
+      const result = await post<{ data: Flat }>("/locations", {
+        address: form.get("address"),
+        building_name: building || null,
+        flat_label: form.get("flat_label"),
+        latitude: point.latitude,
+        longitude: point.longitude,
+      });
+      onCreated(result.data);
+    } catch (err) {
+      setError(message(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <Modal title="Add a new place" onClose={onClose}>
+      <p className="muted">
+        Pinned at {point.latitude.toFixed(5)}, {point.longitude.toFixed(5)}.
+        Close this to drag the pin if it isn’t quite right.
+      </p>
+      {nearby.length > 0 && (
+        <div className="nearby-places">
+          <strong>Already on the map nearby</strong>
+          {nearby.map((location) => (
+            <button
+              key={location.id}
+              type="button"
+              className="nearby-place"
+              onClick={() => onUseExisting(location)}
+            >
+              <span>
+                {location.building_name || "Rental property"}
+                <small>{location.address}</small>
+              </span>
+              <span className="text-button">Review this place</span>
+            </button>
+          ))}
+        </div>
+      )}
+      <form className="form-stack" onSubmit={submit}>
+        <label>
+          Building name (optional)
+          <input
+            name="building_name"
+            maxLength={200}
+            placeholder="e.g. Lakeview Residency"
+          />
+        </label>
+        <label>
+          Address
+          <input
+            name="address"
+            required
+            maxLength={500}
+            placeholder="Street, area and city"
+          />
+        </label>
+        <label>
+          Flat
+          <input
+            name="flat_label"
+            required
+            maxLength={100}
+            placeholder="e.g. 3B, 204, Ground floor"
+          />
+          <small>Reviews are kept separately for each flat.</small>
+        </label>
+        <ErrorNotice error={error} />
+        <button className="button" disabled={busy}>
+          {busy ? "Adding…" : "Add place and write a review"}
+          <Icon name="arrow" size={18} />
+        </button>
+      </form>
+    </Modal>
+  );
+}
+
+export function AddFlatForm({
+  location,
+  onClose,
+  onCreated,
+}: {
+  location: Location;
+  onClose: () => void;
+  onCreated: (flat: Flat) => void;
+}) {
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  async function submit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setError("");
+    setBusy(true);
+    try {
+      const result = await post<{ data: Flat }>(
+        `/locations/${location.id}/flats`,
+        { label: new FormData(e.currentTarget).get("label") },
+      );
+      onCreated(result.data);
+    } catch (err) {
+      setError(message(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <Modal title="Add your flat" onClose={onClose}>
+      <p className="muted">{location.building_name || location.address}</p>
+      <form className="form-stack" onSubmit={submit}>
+        <label>
+          Flat
+          <input
+            name="label"
+            required
+            maxLength={100}
+            placeholder="e.g. 3B, 204, Ground floor"
+          />
+        </label>
+        <ErrorNotice error={error} />
+        <button className="button" disabled={busy}>
+          {busy ? "Adding…" : "Add flat and write a review"}
+          <Icon name="arrow" size={18} />
+        </button>
+      </form>
     </Modal>
   );
 }

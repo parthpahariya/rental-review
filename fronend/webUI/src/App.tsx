@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import {
   AccountPanel,
+  AddFlatForm,
+  AddPlaceForm,
   ErrorNotice,
   Icon,
   Modal,
@@ -8,6 +10,7 @@ import {
   SignIn,
 } from "./components";
 import PropertyMap from "./Map";
+import type { Bounds, MapView, Point } from "./Map";
 import { api, allPages, hasToken, message, setToken } from "./api";
 import type { Account, Flat, Interaction, Location, Review } from "./api";
 
@@ -22,9 +25,17 @@ export default function App() {
   const [reviews, setReviews] = useState<Review[]>([]);
   const [interactions, setInteractions] = useState<Interaction[]>([]);
   const [account, setAccount] = useState<Account | null>(null);
-  const [dialog, setDialog] = useState<
-    "signin" | "account" | "review" | "about" | null
-  >(null);
+  const [dialog, setDialog] = useState<Dialog | null>(null);
+  const [draft, setDraft] = useState<Point | null>(null);
+  const [view, setView] = useState<MapView | null>(null);
+  const [fitAll, setFitAll] = useState(0);
+  const [hovered, setHovered] = useState<string | null>(null);
+  const [sort, setSort] = useState<Sort>("nearest");
+  const [shown, setShown] = useState(PAGE_SIZE);
+  const [flatsVersion, setFlatsVersion] = useState(0);
+  // Flat to open after a reload, and the dialog to resume after signing in.
+  const wantFlat = useRef<string | null>(null);
+  const afterSignIn = useRef<Dialog | null>(null);
   const [loading, setLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
   const [error, setError] = useState("");
@@ -79,7 +90,10 @@ export default function App() {
       .then((rows) => {
         if (live) {
           setFlats(rows);
-          setFlat(rows[0] || null);
+          setFlat(
+            rows.find((f) => f.id === wantFlat.current) || rows[0] || null,
+          );
+          wantFlat.current = null;
           if (!rows.length) setDetailLoading(false);
         }
       })
@@ -92,7 +106,7 @@ export default function App() {
     return () => {
       live = false;
     };
-  }, [selected?.id]);
+  }, [selected?.id, flatsVersion]);
   useEffect(() => {
     if (!flat) return;
     let live = true;
@@ -127,6 +141,7 @@ export default function App() {
     }
   }, [notice]);
   function selectLocation(location: Location) {
+    setDraft(null);
     setSelected(location);
     setTimeout(
       () =>
@@ -137,16 +152,58 @@ export default function App() {
       50,
     );
   }
-  function writeReview() {
-    setDialog(account ? "review" : "signin");
+  function requireAccount(next: Dialog) {
+    if (account) setDialog(next);
+    else {
+      afterSignIn.current = next;
+      setDialog("signin");
+    }
   }
+  function writeReview() {
+    requireAccount("review");
+  }
+  function openReviewFor(created: Flat) {
+    wantFlat.current = created.id;
+    setVersion((v) => v + 1);
+    setDialog("review");
+  }
+  function placeCreated(created: Flat) {
+    setDraft(null);
+    if (selected?.id === created.location.id) setFlatsVersion((v) => v + 1);
+    selectLocation({ ...created.location, summary: created.summary });
+    openReviewFor(created);
+  }
+  function flatCreated(created: Flat) {
+    setFlatsVersion((v) => v + 1);
+    openReviewFor(created);
+  }
+  const nearby = draft
+    ? locations
+        .map((l) => ({ l, d: distanceMetres(draft, l) }))
+        .filter((x) => x.d <= 100)
+        .sort((a, b) => a.d - b.d)
+        .slice(0, 3)
+        .map((x) => x.l)
+    : [];
   function logout() {
     setToken(null);
     setAccount(null);
     setDialog(null);
     setNotice("You have been signed out.");
   }
-  const totalReviews = locations.reduce(
+  // The list mirrors the map: only places inside the visible area are listed.
+  const visible = view
+    ? locations.filter((l) => l.id === selected?.id || inBounds(view.bounds, l))
+    : locations;
+  const hiddenCount = locations.length - visible.length;
+  const sorted = sortLocations(visible, sort, view?.center);
+  const listed = sorted.slice(0, shown);
+  // A new area, sort or search starts again from the top of the list.
+  const areaKey = view
+    ? `${view.bounds.west},${view.bounds.south},${view.bounds.east},${view.bounds.north}`
+    : "";
+  useEffect(() => setShown(PAGE_SIZE), [areaKey, sort, query]);
+  const totalReviews = visible.reduce(
     (sum, location) =>
       sum +
       location.summary.tenant_review_count +
@@ -285,10 +342,23 @@ export default function App() {
               <span>
                 {loading
                   ? "Loading…"
-                  : `${locations.length} places · ${totalReviews} experiences`}
+                  : `${visible.length} ${visible.length === 1 ? "place" : "places"} in this area · ${totalReviews} experiences`}
               </span>
             </div>
-            <span className="demo-label">Fictional demo properties</span>
+            <div className="toolbar-actions">
+              <span className="demo-label">Fictional demo properties</span>
+              <button
+                className="button small outline"
+                onClick={() => {
+                  setSelected(null);
+                  setDraft(
+                    view?.center || { latitude: 12.955, longitude: 77.63 },
+                  );
+                }}
+              >
+                <Icon name="pin" size={15} /> Add a place
+              </button>
+            </div>
           </div>
           <div className="explore-grid">
             <aside
@@ -331,11 +401,59 @@ export default function App() {
                 </div>
               )}
               {!loading &&
-                locations.map((location, index) => (
+                !error &&
+                locations.length > 0 &&
+                !visible.length && (
+                  <div className="empty-state">
+                    <Icon name="pin" size={30} />
+                    <h3>No places in this area</h3>
+                    <p>
+                      Move or zoom out the map, or tap the map to add a place
+                      here.
+                    </p>
+                    <button
+                      className="button small outline"
+                      onClick={() => setFitAll((n) => n + 1)}
+                    >
+                      Show all {locations.length} places
+                    </button>
+                  </div>
+                )}
+              {!loading && visible.length > 1 && (
+                <label className="list-sort">
+                  Sort by
+                  <select
+                    value={sort}
+                    onChange={(e) => setSort(e.target.value as Sort)}
+                  >
+                    <option value="nearest">Nearest to map centre</option>
+                    <option value="reviews">Most reviewed</option>
+                    <option value="rating">Highest rated</option>
+                  </select>
+                </label>
+              )}
+              {!loading && visible.length > 0 && hiddenCount > 0 && (
+                <div className="search-summary area-summary">
+                  {hiddenCount} more {hiddenCount === 1 ? "place" : "places"}{" "}
+                  outside this area
+                  <button
+                    className="text-button"
+                    onClick={() => setFitAll((n) => n + 1)}
+                  >
+                    Show all
+                  </button>
+                </div>
+              )}
+              {!loading &&
+                listed.map((location, index) => (
                   <button
                     key={location.id}
-                    className={`property-card ${selected?.id === location.id ? "selected" : ""}`}
+                    className={`property-card ${selected?.id === location.id ? "selected" : ""} ${hovered === location.id ? "hovered" : ""}`}
                     onClick={() => selectLocation(location)}
+                    onMouseEnter={() => setHovered(location.id)}
+                    onMouseLeave={() => setHovered(null)}
+                    onFocus={() => setHovered(location.id)}
+                    onBlur={() => setHovered(null)}
                     aria-pressed={selected?.id === location.id}
                   >
                     <div
@@ -377,6 +495,17 @@ export default function App() {
                     </div>
                   </button>
                 ))}
+              {!loading && sorted.length > listed.length && (
+                <button
+                  className="button outline show-more"
+                  onClick={() => setShown((n) => n + PAGE_SIZE)}
+                >
+                  Show {Math.min(PAGE_SIZE, sorted.length - listed.length)} more
+                  <span>
+                    {listed.length} of {sorted.length} shown
+                  </span>
+                </button>
+              )}
               <div className="list-footer">
                 <Icon name="chat" size={20} />
                 <p>
@@ -391,11 +520,42 @@ export default function App() {
                 locations={locations}
                 selected={selected?.id || null}
                 onSelect={selectLocation}
+                draft={draft}
+                onPick={(point) => {
+                  setSelected(null);
+                  setDraft(point);
+                }}
+                onViewChange={setView}
+                fitAll={fitAll}
+                highlighted={hovered}
+                onHover={setHovered}
               />
               <div className="map-caption">
-                <span className="status-dot" /> Select a pin to hear from the
-                neighbourhood
+                <span className="status-dot" /> Select a pin to read or write
+                reviews · tap anywhere to add a place
               </div>
+              {draft && (
+                <div className="draft-card" role="group" aria-label="New place">
+                  <div>
+                    <strong>Add a new place here?</strong>
+                    <span>Drag the pin to the exact building.</span>
+                  </div>
+                  <div className="draft-actions">
+                    <button
+                      className="text-button"
+                      onClick={() => setDraft(null)}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      className="button small"
+                      onClick={() => requireAccount("place")}
+                    >
+                      Continue <Icon name="arrow" size={15} />
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </section>
@@ -422,23 +582,37 @@ export default function App() {
                 <Icon name="close" />
               </button>
             </div>
-            {flats.length > 0 && (
-              <label className="flat-picker">
-                Select a flat
-                <select
-                  value={flat?.id || ""}
-                  onChange={(e) =>
-                    setFlat(flats.find((f) => f.id === e.target.value) || null)
-                  }
+            <div className="flat-row">
+              {flats.length > 0 && (
+                <label className="flat-picker">
+                  Select a flat
+                  <select
+                    value={flat?.id || ""}
+                    onChange={(e) =>
+                      setFlat(
+                        flats.find((f) => f.id === e.target.value) || null,
+                      )
+                    }
+                  >
+                    {flats.map((f) => (
+                      <option key={f.id} value={f.id}>
+                        Flat {f.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {!detailLoading && !detailError && (
+                <button
+                  className="text-button"
+                  onClick={() => requireAccount("flat")}
                 >
-                  {flats.map((f) => (
-                    <option key={f.id} value={f.id}>
-                      Flat {f.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
+                  {flats.length
+                    ? "Your flat isn’t listed? Add it"
+                    : "Add your flat to review it"}
+                </button>
+              )}
+            </div>
             <div className="detail-toolbar">
               <div className="tabs" role="tablist" aria-label="Feedback type">
                 {(["tenant", "interaction"] as const).map((kind, index) => (
@@ -610,13 +784,19 @@ export default function App() {
       )}
       {dialog === "signin" && (
         <SignIn
-          onClose={() => setDialog(null)}
+          onClose={() => {
+            afterSignIn.current = null;
+            setDialog(null);
+          }}
           onSuccess={(a) => {
             setAccount(a);
-            setDialog(null);
-            setNotice(
-              "You’re signed in. Select a flat to share your experience.",
-            );
+            const next = afterSignIn.current;
+            afterSignIn.current = null;
+            setDialog(next);
+            if (!next)
+              setNotice(
+                "You’re signed in. Select a flat to share your experience.",
+              );
           }}
         />
       )}
@@ -640,6 +820,25 @@ export default function App() {
           }}
         />
       )}
+      {dialog === "place" && draft && (
+        <AddPlaceForm
+          point={draft}
+          nearby={nearby}
+          onClose={() => setDialog(null)}
+          onUseExisting={(location) => {
+            setDialog(null);
+            selectLocation(location);
+          }}
+          onCreated={placeCreated}
+        />
+      )}
+      {dialog === "flat" && selected && (
+        <AddFlatForm
+          location={selected}
+          onClose={() => setDialog(null)}
+          onCreated={flatCreated}
+        />
+      )}
       {dialog === "about" && (
         <Modal
           title="A little clarity before you move"
@@ -650,7 +849,8 @@ export default function App() {
               <strong>Explore a neighbourhood.</strong>
               <p>
                 Search for a building or pick a location on the map. Select a
-                flat to see its experiences.
+                flat to see its experiences. Can’t find your place? Tap the map
+                where it is to add it.
               </p>
             </li>
             <li>
@@ -676,6 +876,46 @@ export default function App() {
       )}
     </>
   );
+}
+
+const PAGE_SIZE = 20;
+type Sort = "nearest" | "reviews" | "rating";
+
+function sortLocations(list: Location[], sort: Sort, center?: Point) {
+  const reviews = (l: Location) =>
+    l.summary.tenant_review_count + l.summary.interaction_review_count;
+  const by: Record<Sort, (a: Location, b: Location) => number> = {
+    nearest: (a, b) =>
+      center ? distanceMetres(center, a) - distanceMetres(center, b) : 0,
+    reviews: (a, b) => reviews(b) - reviews(a),
+    // Unrated places go last; ties go to the place with more reviews.
+    rating: (a, b) =>
+      (b.summary.average_rating ?? -1) - (a.summary.average_rating ?? -1) ||
+      reviews(b) - reviews(a),
+  };
+  return [...list].sort(by[sort]);
+}
+
+type Dialog = "signin" | "account" | "review" | "place" | "flat" | "about";
+
+function inBounds(b: Bounds, p: Point) {
+  const inLongitude =
+    b.west <= b.east
+      ? p.longitude >= b.west && p.longitude <= b.east
+      : p.longitude >= b.west || p.longitude <= b.east;
+  return inLongitude && p.latitude >= b.south && p.latitude <= b.north;
+}
+
+function distanceMetres(a: Point, b: Point) {
+  const rad = Math.PI / 180;
+  const dLat = (b.latitude - a.latitude) * rad;
+  const dLon = (b.longitude - a.longitude) * rad;
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(a.latitude * rad) *
+      Math.cos(b.latitude * rad) *
+      Math.sin(dLon / 2) ** 2;
+  return 2 * 6371000 * Math.asin(Math.sqrt(h));
 }
 
 function formatDate(value: string) {
