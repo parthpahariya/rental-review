@@ -36,6 +36,13 @@ export default function App() {
   const [sort, setSort] = useState<Sort>("nearest");
   const [shown, setShown] = useState(PAGE_SIZE);
   const [flatsVersion, setFlatsVersion] = useState(0);
+  // On wide screens the results card floats over the map's left side.
+  const [inset, setInset] = useState(floatingInset);
+  useEffect(() => {
+    const update = () => setInset(floatingInset());
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
   // Flat to open after a reload, and the dialog to resume after signing in.
   const wantFlat = useRef<string | null>(null);
   const afterSignIn = useRef<Dialog | null>(null);
@@ -240,6 +247,14 @@ export default function App() {
     0,
   );
   const items = tab === "tenant" ? reviews : interactions;
+  const topRated = locations
+    .filter((l) => l.summary.average_rating != null)
+    .sort(
+      (a, b) =>
+        b.summary.average_rating! - a.summary.average_rating! ||
+        b.summary.tenant_review_count - a.summary.tenant_review_count,
+    )
+    .slice(0, 3);
   const closeDetails = () => {
     setSelected(null);
     setFlat(null);
@@ -287,14 +302,12 @@ export default function App() {
           <section className="hero">
             <div className="hero-copy">
               <p className="eyebrow">
-                <Icon name="shield" size={16} /> Honest reviews from tenants
+                <Icon name="shield" size={16} /> Reviews by tenants, for tenants
               </p>
-              <h1>
-                Know your landlord <span>before you sign.</span>
-              </h1>
+              <h1>Rent with your eyes open.</h1>
               <p className="lead">
-                Read what tenants say about the owner of a flat, from viewing to
-                move-out, then share your own experience.
+                See what past tenants say about a flat’s owner — deposits,
+                repairs, rent hikes — before you sign anything.
               </p>
               <LocalitySearch
                 locations={locations}
@@ -302,56 +315,97 @@ export default function App() {
                 onPlace={openPlace}
                 onBrowseAll={browseAll}
               />
-              <ul className="hero-points">
-                <li>
-                  <Icon name="check" size={16} /> Free to read, no sign-up
-                </li>
-                <li>
-                  <Icon name="check" size={16} /> Reviews tied to a specific
-                  flat
-                </li>
-                <li>
-                  <Icon name="check" size={16} /> Your phone number stays
-                  private
-                </li>
-              </ul>
             </div>
-            <HeroPreview />
+            <RatingSummary locations={locations} loading={loading} />
           </section>
-          <section className="steps" aria-labelledby="steps-title">
-            <h2 id="steps-title">How it works</h2>
-            <ol>
-              <li>
-                <span className="step-icon">
-                  <Icon name="search" size={22} />
+          {topRated.length > 0 && (
+            <section className="block" aria-labelledby="top-title">
+              <div className="block-head">
+                <h2 id="top-title">Top-rated places</h2>
+                <button className="text-button" onClick={browseAll}>
+                  See all on the map <Icon name="arrow" size={16} />
+                </button>
+              </div>
+              <ul className="top-grid">
+                {topRated.map((location) => (
+                  <li key={location.id}>
+                    <button
+                      className="top-card"
+                      onClick={() => openPlace(location)}
+                    >
+                      <span className="top-score">
+                        <Icon name="star" size={18} />
+                        {location.summary.average_rating!.toFixed(1)}
+                      </span>
+                      <strong>
+                        {location.building_name || "Rental property"}
+                      </strong>{" "}
+                      <span className="top-address">{location.address}</span>{" "}
+                      <span className="top-meta">
+                        {location.summary.tenant_review_count} tenant{" "}
+                        {location.summary.tenant_review_count === 1
+                          ? "review"
+                          : "reviews"}{" "}
+                        · {location.summary.interaction_review_count}{" "}
+                        {location.summary.interaction_review_count === 1
+                          ? "interaction"
+                          : "interactions"}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+          <section className="block" aria-labelledby="kinds-title">
+            <div className="block-head">
+              <h2 id="kinds-title">Two kinds of experience, one flat</h2>
+            </div>
+            <div className="kinds">
+              <article className="kind tenant">
+                <span className="kind-icon">
+                  <Icon name="home" size={24} />
                 </span>
-                <h3>Find the area</h3>
+                <h3>Tenant reviews</h3>
                 <p>
-                  Search a locality or building. The map and list show every
-                  reviewed place nearby.
+                  From people who lived there. A star rating, the tenancy dates
+                  and how the owner handled deposits, repairs and renewals.
                 </p>
-              </li>
-              <li>
-                <span className="step-icon">
-                  <Icon name="chat" size={22} />
+              </article>
+              <article className="kind interaction">
+                <span className="kind-icon">
+                  <Icon name="chat" size={24} />
                 </span>
-                <h3>Hear both sides</h3>
+                <h3>Interactions</h3>
                 <p>
-                  Tenant reviews cover a whole tenancy. Interactions cover
-                  viewings, enquiries and everything before you move in.
+                  From people who only met the owner — viewings, enquiries and
+                  negotiations. Useful red flags before you ever move in.
                 </p>
-              </li>
-              <li>
-                <span className="step-icon">
-                  <Icon name="plus" size={22} />
-                </span>
-                <h3>Add your experience</h3>
-                <p>
-                  Sign in with your mobile number, pick your flat or pin a new
-                  one, and help the next tenant.
-                </p>
-              </li>
-            </ol>
+              </article>
+            </div>
+          </section>
+          <section className="cta" aria-labelledby="cta-title">
+            <div>
+              <h2 id="cta-title">Rented before? Help the next tenant.</h2>
+              <p>
+                It takes two minutes. Your review is public; your phone number
+                and documents never are.
+              </p>
+            </div>
+            <div className="cta-actions">
+              <button
+                className="button gold"
+                onClick={() => {
+                  browseAll();
+                  setDraft(DEFAULT_CENTER.center);
+                }}
+              >
+                <Icon name="plus" size={18} /> Add your place
+              </button>
+              <button className="button on-dark" onClick={browseAll}>
+                Browse the map
+              </button>
+            </div>
           </section>
           <footer className="site-footer">
             <span className="brand-name">
@@ -392,7 +446,7 @@ export default function App() {
                   <div className="panel-tools">
                     {!loading && visible.length > 1 ? (
                       <label className="list-sort">
-                        Sort by
+                        <span className="sr-only">Sort by</span>
                         <select
                           value={sort}
                           onChange={(e) => setSort(e.target.value as Sort)}
@@ -561,7 +615,7 @@ export default function App() {
                 </header>
                 <dl className="detail-stats">
                   <div>
-                    <dt>Tenant rating</dt>
+                    <dt>Rating</dt>
                     <dd>
                       {selected.summary.average_rating == null ? (
                         "—"
@@ -574,7 +628,7 @@ export default function App() {
                     </dd>
                   </div>
                   <div>
-                    <dt>Tenant reviews</dt>
+                    <dt>Reviews</dt>
                     <dd>{selected.summary.tenant_review_count}</dd>
                   </div>
                   <div>
@@ -765,6 +819,7 @@ export default function App() {
               }}
               onViewChange={setView}
               fitAll={fitAll}
+              insetLeft={inset}
               focus={focus}
               highlighted={hovered}
               onHover={setHovered}
@@ -903,6 +958,10 @@ export default function App() {
 }
 
 const PAGE_SIZE = 20;
+/** Must match the floating panel width + gap in styles.css. */
+function floatingInset() {
+  return window.matchMedia?.("(min-width: 861px)").matches ? 440 : 0;
+}
 type Sort = "nearest" | "reviews" | "rating";
 
 function sortLocations(list: Location[], sort: Sort, center?: Point) {
@@ -952,63 +1011,91 @@ function formatDate(value: string) {
   });
 }
 
-/** Illustrative preview of the product for the landing page. */
-function HeroPreview() {
+/** Live rating summary for the landing page, built from loaded places. */
+function RatingSummary({
+  locations,
+  loading,
+}: {
+  locations: Location[];
+  loading: boolean;
+}) {
+  const rated = locations.filter((l) => l.summary.average_rating != null);
+  const tenantReviews = locations.reduce(
+    (n, l) => n + l.summary.tenant_review_count,
+    0,
+  );
+  const interactions = locations.reduce(
+    (n, l) => n + l.summary.interaction_review_count,
+    0,
+  );
+  // Weighted by review count so busy places count for more.
+  const weight = rated.reduce((n, l) => n + l.summary.tenant_review_count, 0);
+  const average = weight
+    ? rated.reduce(
+        (n, l) => n + l.summary.average_rating! * l.summary.tenant_review_count,
+        0,
+      ) / weight
+    : null;
+  const bands = [5, 4, 3, 2, 1].map((star) => ({
+    star,
+    count: rated.filter(
+      (l) =>
+        Math.min(5, Math.max(1, Math.round(l.summary.average_rating!))) ===
+        star,
+    ).length,
+  }));
+  const most = Math.max(1, ...bands.map((b) => b.count));
   return (
-    <div className="hero-preview" aria-hidden="true">
-      <svg viewBox="0 0 480 400" className="preview-map">
-        <rect width="480" height="400" rx="24" className="pm-land" />
-        <path
-          d="M0 260 C120 230 180 300 300 270 S440 220 480 240 V400 H0Z"
-          className="pm-park"
-        />
-        <circle cx="390" cy="90" r="58" className="pm-water" />
-        <path d="M-10 150 L490 110" className="pm-road major" />
-        <path d="M140 -10 L190 410" className="pm-road major" />
-        <path d="M-10 300 L490 330" className="pm-road" />
-        <path d="M330 -10 L300 410" className="pm-road" />
-        <path d="M60 -10 L80 410" className="pm-road" />
-        <path d="M-10 60 L490 30" className="pm-road" />
-        <g className="pm-pin">
-          <rect x="196" y="160" width="62" height="30" rx="15" />
-          <text x="227" y="180">
-            ★ 4.6
-          </text>
-        </g>
-        <g className="pm-pin muted">
-          <rect x="66" y="210" width="62" height="30" rx="15" />
-          <text x="97" y="230">
-            ★ 3.9
-          </text>
-        </g>
-        <g className="pm-pin muted">
-          <rect x="300" y="250" width="62" height="30" rx="15" />
-          <text x="331" y="270">
-            ★ 4.2
-          </text>
-        </g>
-        <g className="pm-cluster">
-          <circle cx="300" cy="150" r="20" />
-          <text x="300" y="155">
-            7
-          </text>
-        </g>
-      </svg>
-      <div className="preview-card">
-        <div className="preview-card-head">
-          <span className="avatar">A</span>
-          <span>
-            <strong>Owner: Anita R.</strong>
-            <small>Tenancy · 2 years</small>
-          </span>
-          <span className="stars on" aria-hidden="true">
-            ★★★★★
-          </span>
+    <aside className="summary" aria-label="Ratings across all places">
+      {loading ? (
+        <div className="summary-loading" role="status">
+          Loading ratings…
         </div>
-        <p>
-          “Repairs were sorted within a day and the deposit came back in full.”
-        </p>
-      </div>
-    </div>
+      ) : (
+        <>
+          <p className="summary-label">Across {locations.length} places</p>
+          <div className="summary-score">
+            <strong>{average == null ? "—" : average.toFixed(1)}</strong>
+            <span
+              className="stars"
+              role="img"
+              aria-label={
+                average == null
+                  ? "No ratings yet"
+                  : `Average ${average.toFixed(1)} out of 5`
+              }
+            >
+              {[1, 2, 3, 4, 5].map((n) => (
+                <span
+                  key={n}
+                  className={
+                    average != null && n <= Math.round(average) ? "on" : ""
+                  }
+                >
+                  <Icon name="star" size={20} />
+                </span>
+              ))}
+            </span>
+          </div>
+          <p className="summary-sub">
+            {tenantReviews} tenant reviews · {interactions} interactions
+          </p>
+          <ul className="bands" aria-label="Places by tenant rating">
+            {bands.map((b) => (
+              <li key={b.star}>
+                <span>{b.star} ★</span>
+                <span className="bar">
+                  <span
+                    className={`fill s${b.star}`}
+                    style={{ width: `${(b.count / most) * 100}%` }}
+                  />
+                </span>
+                <span className="band-count">{b.count}</span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </aside>
   );
 }

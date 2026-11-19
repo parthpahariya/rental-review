@@ -27,6 +27,7 @@ export default function PropertyMap({
   onPick,
   onViewChange,
   fitAll = 0,
+  insetLeft = 0,
   highlighted = null,
   onHover,
   focus = null,
@@ -39,6 +40,8 @@ export default function PropertyMap({
   onViewChange?: (view: MapView) => void;
   /** Increment to zoom the map out to every location. */
   fitAll?: number;
+  /** Width in px of a panel floating over the map's left edge. */
+  insetLeft?: number;
   /** Location to emphasise, e.g. while its list card is hovered. */
   highlighted?: string | null;
   onHover?: (id: string | null) => void;
@@ -53,6 +56,8 @@ export default function PropertyMap({
   const select = useRef(onSelect);
   const pick = useRef(onPick);
   const viewChange = useRef(onViewChange);
+  const inset = useRef(insetLeft);
+  inset.current = insetLeft;
   const hover = useRef(onHover);
   hover.current = onHover;
   select.current = onSelect;
@@ -75,8 +80,14 @@ export default function PropertyMap({
       pick.current?.({ latitude: e.latlng.lat, longitude: e.latlng.lng }),
     );
     const reportView = () => {
-      const c = instance.getCenter();
-      const b = instance.getBounds();
+      // Report only the part of the map not covered by the floating panel.
+      const size = instance.getSize();
+      const left = Math.min(inset.current, size.x - 1);
+      const b = L.latLngBounds(
+        instance.containerPointToLatLng([left, size.y]),
+        instance.containerPointToLatLng([size.x, 0]),
+      );
+      const c = b.getCenter();
       viewChange.current?.({
         center: { latitude: c.lat, longitude: c.lng },
         bounds: {
@@ -139,7 +150,13 @@ export default function PropertyMap({
     applyHighlight(highlight.current);
     const marker = selected ? byId.current.get(selected) : undefined;
     // Zooms in far enough to pull the selected pin out of its cluster.
-    if (marker) markers.current.zoomToShowLayer(marker);
+    if (marker)
+      markers.current.zoomToShowLayer(marker, () => {
+        // Nudge the map if the pin ended up under the floating panel.
+        const p = map.current!.latLngToContainerPoint(marker.getLatLng());
+        const edge = inset.current + 48;
+        if (p.x < edge) map.current!.panBy([p.x - edge - 80, 0]);
+      });
   }, [locations, selected]);
   useEffect(() => {
     if (!focus || !map.current) return;
@@ -151,13 +168,20 @@ export default function PropertyMap({
           [b.south, b.west],
           [b.north, b.east],
         ],
-        { padding: [30, 30], maxZoom: 16 },
+        {
+          paddingTopLeft: [30 + inset.current, 30],
+          paddingBottomRight: [30, 30],
+          maxZoom: 16,
+        },
       );
-    else
-      map.current.setView(
-        [focus.center.latitude, focus.center.longitude],
-        focus.zoom ?? 15,
-      );
+    else {
+      // Centre the place in the visible part of the map, beside the panel.
+      const zoom = focus.zoom ?? 15;
+      const point = map.current
+        .project([focus.center.latitude, focus.center.longitude], zoom)
+        .subtract([inset.current / 2, 0]);
+      map.current.setView(map.current.unproject(point, zoom), zoom);
+    }
   }, [focus?.key]);
   useEffect(() => {
     highlight.current = highlighted;
@@ -180,7 +204,11 @@ export default function PropertyMap({
     if (!fitAll || !map.current || !locations.length) return;
     map.current.fitBounds(
       L.latLngBounds(locations.map((l) => [l.latitude, l.longitude])),
-      { padding: [70, 70], maxZoom: 14 },
+      {
+        paddingTopLeft: [70 + inset.current, 70],
+        paddingBottomRight: [70, 70],
+        maxZoom: 14,
+      },
     );
     // Only respond to explicit "show all" requests.
   }, [fitAll]);
