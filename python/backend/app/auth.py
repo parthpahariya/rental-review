@@ -12,7 +12,7 @@ from .common import account_data, current_user, digest, fail, lock
 from .config import get_settings
 from .database import get_db
 from .models import RateLimit, Session, User, now
-from .schemas import ConfirmationBody
+from .schemas import ConfirmationBody, ProfileBody
 
 router = APIRouter()
 
@@ -62,6 +62,18 @@ def new_session(db, user):
 
 @router.get("/me")
 def me(user: User = Depends(current_user)):
+    return {"data": account_data(user)}
+
+
+@router.patch("/me")
+def update_profile(
+    body: ProfileBody, user: User = Depends(current_user), db: DbSession = Depends(get_db)
+):
+    """Set your own display name; null hands it back to Google on the next sign-in."""
+    user.name = body.name
+    user.name_is_custom = body.name is not None
+    user.updated_at = now()
+    db.flush()
     return {"data": account_data(user)}
 
 

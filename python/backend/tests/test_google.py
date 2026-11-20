@@ -123,3 +123,24 @@ def test_name_is_stored_and_refreshed_but_never_public(client, flat_id):
     )
     public = client.get(f"/api/v1/flats/{flat_id}/tenant-reviews").text
     assert "Asha" not in public and "xxxxxxxxxx" not in public
+
+
+def test_user_can_set_their_own_name_and_google_stops_overwriting_it(client):
+    data = google_sign_in(client, token(name="Asha Rao")).json()["data"]
+    auth = {"Authorization": f"Bearer {data['session']['token']}"}
+    edited = client.patch("/api/v1/me", headers=auth, json={"name": "  Asha  "})
+    assert edited.status_code == 200, edited.text
+    assert edited.json()["data"]["name"] == "Asha"
+    assert edited.json()["data"]["name_is_custom"] is True
+    # Signing in again keeps the chosen name.
+    again = google_sign_in(client, token(name="Asha Rao")).json()["data"]["account"]
+    assert again["name"] == "Asha"
+    # Clearing it goes back to the Google name from the next sign-in.
+    cleared = client.patch("/api/v1/me", headers=auth, json={"name": None}).json()["data"]
+    assert cleared["name"] is None and cleared["name_is_custom"] is False
+    back = google_sign_in(client, token(name="Asha Rao")).json()["data"]["account"]
+    assert back["name"] == "Asha Rao"
+    for bad in ({"name": "   "}, {"name": "x" * 201}, {}, {"name": "ok", "role": "admin"},
+                {"email": "x@example.com"}):
+        assert client.patch("/api/v1/me", headers=auth, json=bad).status_code == 422, bad
+    assert client.patch("/api/v1/me", json={"name": "Nobody"}).status_code == 401

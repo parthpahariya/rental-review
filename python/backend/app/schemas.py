@@ -147,3 +147,8 @@ class LocationBody(Body):
     latitude: Annotated[float, Field(strict=True, ge=-90, le=90, allow_inf_nan=False)]
     longitude: Annotated[float, Field(strict=True, ge=-180, le=180, allow_inf_nan=False)]
     flat_label: FlatLabel
+
+
+class ProfileBody(Body):
+    # A name of your choice, or null to go back to your Google account's name.
+    name: ShortText | None

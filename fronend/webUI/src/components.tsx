@@ -148,10 +148,13 @@ export function Modal({
 }
 
 const shortDate = (value: string) =>
-  new Date(value.length === 10 ? `${value}T00:00:00` : value).toLocaleDateString(
-    undefined,
-    { day: "numeric", month: "short", year: "numeric" },
-  );
+  new Date(
+    value.length === 10 ? `${value}T00:00:00` : value,
+  ).toLocaleDateString(undefined, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
 
 /**
  * One tenant review or interaction on a flat's page:
@@ -215,7 +218,9 @@ export function FeedbackCard({
           {isReview ? (
             <>
               <span className="review-chip-label">Tenancy</span>
-              <span className="nowrap">{shortDate(item.tenancy_start_date)}</span>
+              <span className="nowrap">
+                {shortDate(item.tenancy_start_date)}
+              </span>
               {" – "}
               <span className="nowrap">{shortDate(item.tenancy_end_date)}</span>
             </>
@@ -535,13 +540,7 @@ export function ReviewForm({
 }
 
 /** "Lakeview Residency · Flat 3B", opening that place on the map when clicked. */
-function PlaceLink({
-  place,
-  onOpen,
-}: {
-  place: Place;
-  onOpen: () => void;
-}) {
+function PlaceLink({ place, onOpen }: { place: Place; onOpen: () => void }) {
   return (
     <button className="place-link" onClick={onOpen}>
       <Icon name="pin" size={15} />
@@ -562,11 +561,14 @@ export function AccountPanel({
   onLogout,
   onChanged,
   onOpen,
+  onAccount,
 }: {
   account: Account;
   onClose: () => void;
   onLogout: () => void;
   onChanged: () => void;
+  /** Called with the updated account after the user renames themselves. */
+  onAccount: (account: Account) => void;
   /** Shows a place on the map with the given flat (and tab) selected. */
   onOpen: (
     locationId: string,
@@ -576,6 +578,19 @@ export function AccountPanel({
 }) {
   const [reviews, setReviews] = useState<Review[]>([]);
   const [added, setAdded] = useState<OwnFlat[]>([]);
+  const [renaming, setRenaming] = useState(false);
+  async function saveName(name: string | null) {
+    setBusy(true);
+    setError("");
+    try {
+      onAccount((await patch<{ data: Account }>("/me", { name })).data);
+      setRenaming(false);
+    } catch (e) {
+      setError(message(e));
+    } finally {
+      setBusy(false);
+    }
+  }
   const [interactions, setInteractions] = useState<Interaction[]>([]);
   const [requests, setRequests] = useState<Deletion[]>([]);
   const [adminRequests, setAdminRequests] = useState<Deletion[]>([]);
@@ -656,10 +671,67 @@ export function AccountPanel({
   return (
     <Modal title="Your rental notebook" onClose={onClose}>
       <div className="account-bar">
-        <span className="account-who">
-          {account.name && <strong>{account.name}</strong>}
-          <span>{account.email}</span>
-        </span>
+        {renaming ? (
+          <form
+            className="form-stack name-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const name = String(
+                new FormData(e.currentTarget).get("name") || "",
+              ).trim();
+              void saveName(name || null);
+            }}
+          >
+            <label>
+              Your name
+              <input
+                name="name"
+                maxLength={200}
+                autoFocus
+                defaultValue={account.name || ""}
+                placeholder="How you’d like to be called"
+              />
+            </label>
+            <small>
+              Only you see this. It never appears with your reviews.
+            </small>
+            <div className="inline-actions">
+              <button className="button small" disabled={busy}>
+                {busy ? "Saving…" : "Save"}
+              </button>
+              <button
+                type="button"
+                className="text-button"
+                onClick={() => setRenaming(false)}
+              >
+                Cancel
+              </button>
+              {account.name_is_custom && (
+                <button
+                  type="button"
+                  className="text-button"
+                  disabled={busy}
+                  onClick={() => void saveName(null)}
+                >
+                  Use my Google name
+                </button>
+              )}
+            </div>
+          </form>
+        ) : (
+          <span className="account-who">
+            {account.name && <strong>{account.name}</strong>}
+            <span>{account.email}</span>
+            <button
+              type="button"
+              className="text-button edit-name"
+              onClick={() => setRenaming(true)}
+            >
+              <Icon name="edit" size={14} />{" "}
+              {account.name ? "Edit name" : "Add your name"}
+            </button>
+          </span>
+        )}
         <button
           disabled={busy}
           className="text-button"
@@ -1024,13 +1096,15 @@ export function AddPlaceForm({
             maxLength={200}
             placeholder="e.g. Lakeview Residency"
             required={nearby.length > 0}
-            aria-describedby={nearby.length > 0 ? "building-name-hint" : undefined}
+            aria-describedby={
+              nearby.length > 0 ? "building-name-hint" : undefined
+            }
           />
         </label>
         {nearby.length > 0 && (
           <p className="muted fine-print" id="building-name-hint">
-            Not one of the places above? Give your building its name so it can be
-            added next to them.
+            Not one of the places above? Give your building its name so it can
+            be added next to them.
           </p>
         )}
         <label>
@@ -1104,11 +1178,15 @@ export function EditPlaceForm({
         const name = String(form.get("building_name") || "").trim() || null;
         const address = String(form.get("address") || "").trim();
         const changes: Record<string, string | null> = {};
-        if (name !== (location.building_name || null)) changes.building_name = name;
+        if (name !== (location.building_name || null))
+          changes.building_name = name;
         if (address !== location.address) changes.address = address;
         if (Object.keys(changes).length)
           savedLocation = (
-            await patch<{ data: Location }>(`/locations/${location.id}`, changes)
+            await patch<{ data: Location }>(
+              `/locations/${location.id}`,
+              changes,
+            )
           ).data;
       }
       if (canEditFlat && flat) {

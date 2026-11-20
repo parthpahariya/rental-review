@@ -159,7 +159,6 @@ The initial policy has `proof_required: false`. The server selects the policy ef
 | `GET /locations/{location_id}` | None | Single `MapLocation`, even if it currently has no reviews |
 | `GET /locations/{location_id}/flats` | None | List of `Flat`, including flats without feedback |
 | `GET /flats/{flat_id}` | None | Single `Flat` |
-| `GET /stats` | None (not paginated) | Single object: `location_count`, `rated_location_count`, `tenant_review_count`, `interaction_review_count`, `average_rating: number\|null`, `rating_bands: [{stars, count}]` (locations by rounded average, 5→1), `top_rated: MapLocation[]` (up to 3). Cached for up to 60 seconds. |
 
 `bbox` uses inclusive WGS84 longitude/latitude bounds. Longitude must be within `[-180, 180]`, latitude within `[-90, 90]`, and south must not exceed north. A west value greater than east denotes an antimeridian-crossing viewport. Invalid bounds return `400 INVALID_BOUNDS`. No bounds means all locations, paginated. `q` performs case-insensitive substring matching on location address/building name; combine it with other filters using AND.
 

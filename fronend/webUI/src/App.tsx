@@ -31,9 +31,8 @@ import type {
   Location,
   Permissions,
   Review,
-  Stats,
 } from "./api";
-import { formatAtLeast, formatCount, plural } from "./format";
+import { formatCount, plural } from "./format";
 import { readUrlState, writeUrlState } from "./urlState";
 
 export default function App() {
@@ -41,8 +40,6 @@ export default function App() {
   // too large (crores of buildings) to download.
   const [locations, setLocations] = useState<Location[]>([]);
   const [more, setMore] = useState(false);
-  const [stats, setStats] = useState<Stats | null>(null);
-  const [statsError, setStatsError] = useState(false);
   // A refresh or shared link reopens the spot saved in the address bar.
   const [restored] = useState(readUrlState);
   // The map stays hidden until the visitor picks a locality to look at.
@@ -116,20 +113,6 @@ export default function App() {
         .then((r) => setAccount(r.data))
         .catch(() => setToken(null));
   }, []);
-  useEffect(() => {
-    let live = true;
-    setStatsError(false);
-    api<{ data: Stats }>("/stats")
-      .then((r) => {
-        if (live) setStats(r.data);
-      })
-      .catch(() => {
-        if (live) setStatsError(true);
-      });
-    return () => {
-      live = false;
-    };
-  }, [version]);
   useEffect(() => {
     // Reopen the place that was open before the refresh.
     if (!restored.place) return;
@@ -394,6 +377,24 @@ export default function App() {
     ? `${view.bounds.west},${view.bounds.south},${view.bounds.east},${view.bounds.north}`
     : "";
   useEffect(() => setShown(PAGE_SIZE), [areaKey, sort]);
+  // Infinite scroll: list 20 more whenever the end of the list comes near view.
+  // Observing against the viewport also covers the panel's own scroll area,
+  // since anything scrolled out of it counts as hidden.
+  const listEnd = useRef<HTMLDivElement>(null);
+  const hasMore = sorted.length > listed.length;
+  useEffect(() => {
+    const end = listEnd.current;
+    if (!end || !hasMore || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting))
+          setShown((n) => n + PAGE_SIZE);
+      },
+      { rootMargin: "0px 0px 400px 0px" },
+    );
+    observer.observe(end);
+    return () => observer.disconnect();
+  }, [hasMore, listed.length, loading]);
   const totalReviews = visible.reduce(
     (sum, location) =>
       sum +
@@ -402,7 +403,6 @@ export default function App() {
     0,
   );
   const items = tab === "tenant" ? reviews : interactions;
-  const topRated = stats?.top_rated ?? [];
   const closeDetails = () => {
     setSelected(null);
     setFlat(null);
@@ -494,11 +494,9 @@ export default function App() {
               </p>
               <h1>Rent with your eyes open.</h1>
               <p className="lead">
-                {stats && stats.location_count > 0
-                  ? `${formatAtLeast(stats.location_count)} buildings across India, rated by the people who lived there.`
-                  : "Buildings across India, rated by the people who lived there."}{" "}
-                See what past tenants say about an owner — deposits, repairs,
-                rent hikes — before you sign anything.
+                Buildings across India, rated by the people who lived there. See
+                what past tenants say about an owner — deposits, repairs, rent
+                hikes — before you sign anything.
               </p>
               <LocalitySearch
                 onArea={openArea}
@@ -506,58 +504,7 @@ export default function App() {
                 onBrowseAll={browseAll}
               />
             </div>
-            <RatingSummary stats={stats} failed={statsError} />
           </section>
-          <section className="scale" aria-label="Rental Review in numbers">
-            <ul className="scale-grid">
-              {SCALE_FIGURES.map(([key, label]) => (
-                <li key={key}>
-                  <strong>{stats ? formatCount(stats[key]) : "—"}</strong>
-                  <span>{label}</span>
-                </li>
-              ))}
-            </ul>
-          </section>
-          {topRated.length > 0 && (
-            <section className="block" aria-labelledby="top-title">
-              <div className="block-head">
-                <h2 id="top-title">Top-rated buildings in India</h2>
-                <button className="text-button" onClick={browseAll}>
-                  See all on the map <Icon name="arrow" size={16} />
-                </button>
-              </div>
-              <ul className="top-grid">
-                {topRated.map((location) => (
-                  <li key={location.id}>
-                    <button
-                      className="top-card"
-                      onClick={() => openPlace(location)}
-                    >
-                      <span className="top-score">
-                        <Icon name="star" size={18} />
-                        {location.summary.average_rating!.toFixed(1)}
-                      </span>
-                      <strong>
-                        {location.building_name || "Rental property"}
-                      </strong>{" "}
-                      <span className="top-address">{location.address}</span>{" "}
-                      <span className="top-meta">
-                        {plural(
-                          location.summary.tenant_review_count,
-                          "tenant review",
-                        )}{" "}
-                        ·{" "}
-                        {plural(
-                          location.summary.interaction_review_count,
-                          "interaction",
-                        )}
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
           <section className="block" aria-labelledby="kinds-title">
             <div className="block-head">
               <h2 id="kinds-title">Two kinds of experience, one flat</h2>
@@ -770,18 +717,10 @@ export default function App() {
                       })}
                     </ul>
                   )}
-                  {!loading && sorted.length > listed.length && (
-                    <button
-                      className="button secondary show-more"
-                      onClick={() => setShown((n) => n + PAGE_SIZE)}
-                    >
-                      Show {Math.min(PAGE_SIZE, sorted.length - listed.length)}{" "}
-                      more
-                      <span>
-                        {formatCount(listed.length)} of{" "}
-                        {formatCount(sorted.length)} shown
-                      </span>
-                    </button>
+                  {!loading && hasMore && (
+                    <div className="list-end" ref={listEnd} role="status">
+                      Loading more places…
+                    </div>
                   )}
                 </div>
               </section>
@@ -980,6 +919,7 @@ export default function App() {
                 setDraft(point);
               }}
               onViewChange={setView}
+              partial={more}
               zoomOut={zoomOut}
               insetLeft={inset}
               focus={focus}
@@ -1079,6 +1019,7 @@ export default function App() {
           onOpen={(locationId, flatId, kind) =>
             void openOwn(locationId, flatId, kind)
           }
+          onAccount={setAccount}
         />
       )}
       {dialog === "review" && flat && (
@@ -1164,12 +1105,6 @@ export default function App() {
               </p>
             </li>
           </ol>
-          <p className="dev-notice">
-            This working model includes fictional properties in Bengaluru. Only
-            the buildings in view are loaded, so the map stays fast at any
-            scale. Map tiles are provided by OpenStreetMap and need an internet
-            connection.
-          </p>
         </Modal>
       )}
     </>
@@ -1179,13 +1114,6 @@ export default function App() {
 const PAGE_SIZE = 20;
 /** Up to 500 pins per view; denser views ask the visitor to zoom in. */
 const MAX_PAGES = 5;
-const SCALE_FIGURES = [
-  ["location_count", "Buildings mapped"],
-  ["rated_location_count", "Buildings rated"],
-  ["tenant_review_count", "Tenant reviews"],
-  ["interaction_review_count", "Owner interactions"],
-] as const;
-
 /** A first map query for an area, before the map has reported its view. */
 function areaBounds(area: Area): Bounds {
   if (area.bounds) return area.bounds;
@@ -1243,74 +1171,3 @@ function distanceMetres(a: Point, b: Point) {
 }
 
 /** National rating summary for the landing page, from server-side totals. */
-function RatingSummary({
-  stats,
-  failed,
-}: {
-  stats: Stats | null;
-  failed: boolean;
-}) {
-  if (!stats)
-    return (
-      <aside className="summary" aria-label="Ratings across India">
-        <div className="summary-loading" role="status">
-          {failed ? "Ratings are unavailable right now." : "Loading ratings…"}
-        </div>
-      </aside>
-    );
-  const average = stats.average_rating;
-  const rated = Math.max(1, stats.rated_location_count);
-  const most = Math.max(1, ...stats.rating_bands.map((b) => b.count));
-  return (
-    <aside className="summary" aria-label="Ratings across India">
-      <p className="summary-label">
-        Across {plural(stats.rated_location_count, "rated building")} in India
-      </p>
-      <div className="summary-score">
-        <strong>{average == null ? "—" : average.toFixed(1)}</strong>
-        <span
-          className="stars"
-          role="img"
-          aria-label={
-            average == null
-              ? "No ratings yet"
-              : `Average ${average.toFixed(1)} out of 5`
-          }
-        >
-          {[1, 2, 3, 4, 5].map((n) => (
-            <span
-              key={n}
-              className={
-                average != null && n <= Math.round(average) ? "on" : ""
-              }
-            >
-              <Icon name="star" size={20} />
-            </span>
-          ))}
-        </span>
-      </div>
-      <p className="summary-sub">
-        From {plural(stats.tenant_review_count, "tenant review")}
-      </p>
-      <ul className="bands" aria-label="Share of buildings by tenant rating">
-        {stats.rating_bands.map((b) => (
-          <li key={b.stars}>
-            <span>{b.stars} ★</span>
-            <span className="bar">
-              <span
-                className={`fill s${b.stars}`}
-                style={{ width: `${(b.count / most) * 100}%` }}
-              />
-            </span>
-            <span
-              className="band-count"
-              title={`${formatCount(b.count)} buildings`}
-            >
-              {Math.round((b.count / rated) * 100)}%
-            </span>
-          </li>
-        ))}
-      </ul>
-    </aside>
-  );
-}

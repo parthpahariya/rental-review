@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App from "./App";
 import { setToken } from "./api";
+import { scrollToListEnd } from "./test-setup";
 
 const mapView: { current: unknown } = { current: null };
 vi.mock("./Map", async () => {
@@ -55,22 +56,6 @@ const interaction = {
   submitted_at: "2025-02-02T00:00:00Z",
 };
 
-const stats = {
-  location_count: 12_345_678,
-  rated_location_count: 4_560_000,
-  tenant_review_count: 23_400_000,
-  interaction_review_count: 98_765,
-  average_rating: 4.2,
-  rating_bands: [
-    { stars: 5, count: 2_280_000 },
-    { stars: 4, count: 1_368_000 },
-    { stars: 3, count: 456_000 },
-    { stars: 2, count: 228_000 },
-    { stars: 1, count: 228_000 },
-  ],
-  top_rated: [location],
-};
-
 function result(data: unknown, list = true) {
   return new Response(
     JSON.stringify(list ? { data, page: { next_cursor: null } } : { data }),
@@ -86,8 +71,6 @@ beforeEach(() => {
   vi.stubGlobal(
     "fetch",
     vi.fn((input: string) => {
-      if (input.includes("/stats"))
-        return Promise.resolve(result(stats, false));
       if (input.includes("/auth/providers"))
         return Promise.resolve(result({ google_client_id: null }, false));
       if (input.endsWith("/locations/location-1"))
@@ -264,7 +247,9 @@ describe("Rental Review", () => {
             button.textContent = "Continue with Google";
             button.type = "button";
             button.onclick = () =>
-              initialize.mock.calls[0][0].callback({ credential: "google-jwt" });
+              initialize.mock.calls[0][0].callback({
+                credential: "google-jwt",
+              });
             el.appendChild(button);
           },
         },
@@ -279,7 +264,10 @@ describe("Rental Review", () => {
       vi.fn((input: string, init?: RequestInit) => {
         if (input.includes("/auth/providers"))
           return Promise.resolve(
-            result({ google_client_id: "client.apps.googleusercontent.com" }, false),
+            result(
+              { google_client_id: "client.apps.googleusercontent.com" },
+              false,
+            ),
           );
         if (input.includes("/auth/google"))
           return Promise.resolve(
@@ -438,7 +426,8 @@ describe("Rental Review", () => {
           return Promise.resolve(result({ ...myFlat, label: "202" }, false));
         if (input.includes("/locations/location-9/flats"))
           return Promise.resolve(result([myFlat]));
-        if (input.includes("/flats/flat-9/")) return Promise.resolve(result([]));
+        if (input.includes("/flats/flat-9/"))
+          return Promise.resolve(result([]));
         if (input.includes("/locations?"))
           return Promise.resolve(result([mine]));
         return base(input);
@@ -550,7 +539,10 @@ describe("Rental Review", () => {
           return Promise.resolve(
             result([{ ...flat, added_place: true, can_edit: true }]),
           );
-        if (input.includes("/me/interactions") || input.includes("/me/deletion"))
+        if (
+          input.includes("/me/interactions") ||
+          input.includes("/me/deletion")
+        )
           return Promise.resolve(result([]));
         if (input.includes("/permissions"))
           return Promise.resolve(
@@ -580,6 +572,70 @@ describe("Rental Review", () => {
     ).toBeInTheDocument();
     expect(await screen.findByText("A helpful owner.")).toBeInTheDocument();
     expect(screen.queryByText("Your rental notebook")).not.toBeInTheDocument();
+  });
+
+  it("lets the user edit their name in the notebook", async () => {
+    const base = fetch as unknown as (
+      input: string,
+      init?: RequestInit,
+    ) => Promise<Response>;
+    const patches: unknown[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: string, init?: RequestInit) => {
+        if (init?.method === "PATCH" && input.endsWith("/me")) {
+          const body = JSON.parse(String(init.body));
+          patches.push(body);
+          return Promise.resolve(
+            result(
+              {
+                id: "me",
+                name: body.name,
+                name_is_custom: body.name !== null,
+                email: "me@example.com",
+                role: "user",
+              },
+              false,
+            ),
+          );
+        }
+        if (input.endsWith("/me"))
+          return Promise.resolve(
+            result(
+              {
+                id: "me",
+                name: "Asha Rao",
+                email: "me@example.com",
+                role: "user",
+              },
+              false,
+            ),
+          );
+        if (input.includes("/me/")) return Promise.resolve(result([]));
+        return base(input, init);
+      }),
+    );
+    setToken("test-session");
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(
+      await screen.findByRole("button", { name: "Your account" }),
+    );
+    await user.click(await screen.findByRole("button", { name: /Edit name/ }));
+    const input = screen.getByLabelText("Your name");
+    await user.clear(input);
+    await user.type(input, "  Asha  ");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByText("Asha")).toBeInTheDocument();
+    expect(patches).toEqual([{ name: "Asha" }]);
+    // Going back to the Google name sends null.
+    await user.click(screen.getByRole("button", { name: /Edit name/ }));
+    await user.click(
+      screen.getByRole("button", { name: "Use my Google name" }),
+    );
+    await waitFor(() =>
+      expect(patches).toEqual([{ name: "Asha" }, { name: null }]),
+    );
   });
 
   it("shows no edit button on places added by someone else", async () => {
@@ -691,11 +747,7 @@ describe("Rental Review", () => {
     };
     vi.stubGlobal(
       "fetch",
-      vi.fn((input: string) =>
-        Promise.resolve(
-          input.includes("/stats") ? result(stats, false) : result(many),
-        ),
-      ),
+      vi.fn((input: string) => Promise.resolve(result(many))),
     );
     const user = userEvent.setup();
     render(<App />);
@@ -704,8 +756,15 @@ describe("Rental Review", () => {
     await screen.findByRole("button", { name: /Tower 0\b/ });
     expect(cards()).toHaveLength(20);
     expect(cards()[0]).toHaveAccessibleName(/Tower 0\b/);
-    await user.click(screen.getByRole("button", { name: /Show 5 more/ }));
+    // No button: scrolling to the end of the list loads the rest.
+    expect(
+      screen.queryByRole("button", { name: /more/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("Loading more places…")).toBeInTheDocument();
+    act(() => scrollToListEnd());
     expect(cards()).toHaveLength(25);
+    // Everything is listed, so the end marker goes away.
+    expect(screen.queryByText("Loading more places…")).not.toBeInTheDocument();
     await user.selectOptions(screen.getByLabelText("Sort by"), "rating");
     expect(cards()[0]).toHaveAccessibleName(/Tower 7\b/);
     expect(cards()).toHaveLength(20);
@@ -713,24 +772,20 @@ describe("Rental Review", () => {
     expect(cards()[0]).toHaveAccessibleName(/Tower 3\b/);
   });
 
-  it("presents national totals in lakh and crore without listing every building", async () => {
+  it("home page has no statistics or top-rated list and loads no place data", async () => {
     render(<App />);
-    expect(await screen.findByText("1.2 Cr")).toBeInTheDocument();
-    expect(screen.getByText("45.6 L")).toBeInTheDocument();
-    expect(screen.getByText("2.3 Cr")).toBeInTheDocument();
-    expect(screen.getByText("98,765")).toBeInTheDocument();
     expect(
-      screen.getByText(/1\.2 Cr\+ buildings across India/),
+      await screen.findByText(/Buildings across India, rated by the people/),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/Across 45\.6 L rated buildings/),
-    ).toBeInTheDocument();
-    expect(screen.getByText("50%")).toBeInTheDocument();
-    // Top-rated buildings come from the stats endpoint.
+      screen.queryByRole("heading", { name: /Top-rated/ }),
+    ).not.toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: /Parkside Residences/ }),
-    ).toBeInTheDocument();
+      screen.queryByRole("region", { name: /in numbers/ }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/rated buildings/)).not.toBeInTheDocument();
     const urls = vi.mocked(fetch).mock.calls.map(([url]) => String(url));
+    expect(urls.some((u) => u.includes("/stats"))).toBe(false);
     expect(urls.some((u) => u.includes("/locations"))).toBe(false);
   });
 
@@ -742,8 +797,6 @@ describe("Rental Review", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn((input: string) => {
-        if (input.includes("/stats"))
-          return Promise.resolve(result(stats, false));
         const page = Array.from({ length: 100 }, (_, i) => ({
           ...location,
           id: `${input.length}-${Math.random()}-${i}`,

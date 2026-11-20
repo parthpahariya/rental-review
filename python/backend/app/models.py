@@ -40,9 +40,13 @@ class User(Identity, Timestamps, Base):
     # Google's stable account id ("sub"); emails can change, this never does.
     google_subject: Mapped[str | None] = mapped_column(String(255), unique=True)
     email: Mapped[str | None] = mapped_column(String(320))
-    # Display name from the Google account, refreshed on each sign-in. Private:
-    # shown only to the account holder, never with reviews.
+    # Display name: from the Google account (refreshed on each sign-in) until the
+    # user sets their own, which Google then no longer overwrites. Private: shown
+    # only to the account holder, never with reviews.
     name: Mapped[str | None] = mapped_column(String(200))
+    name_is_custom: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false")
+    )
     role: Mapped[str] = mapped_column(String(10), default="user")
     status: Mapped[str] = mapped_column(String(10), default="active")
     deactivated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

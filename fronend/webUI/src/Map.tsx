@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import L from "leaflet";
 import "leaflet.markercluster";
 import type { Location } from "./api";
-import { formatCount, formatShort } from "./format";
+import { formatCount, formatShort, formatShortAtLeast } from "./format";
 
 export type Point = { latitude: number; longitude: number };
 export type Bounds = {
@@ -32,6 +32,7 @@ export default function PropertyMap({
   highlighted = null,
   onHover,
   focus = null,
+  partial = false,
 }: {
   locations: Location[];
   selected: string | null;
@@ -47,6 +48,11 @@ export default function PropertyMap({
   highlighted?: string | null;
   onHover?: (id: string | null) => void;
   focus?: Focus | null;
+  /**
+   * True when only some of the places in view are loaded (the per-view cap).
+   * Bubble counts are then lower bounds and show as round numbers with "+".
+   */
+  partial?: boolean;
 }) {
   const element = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
@@ -61,6 +67,8 @@ export default function PropertyMap({
   const pick = useRef(onPick);
   const viewChange = useRef(onViewChange);
   const inset = useRef(insetLeft);
+  // Read by clusterIcon when bubbles are drawn; set before effects run.
+  isPartial.current = partial;
   inset.current = insetLeft;
   const hover = useRef(onHover);
   hover.current = onHover;
@@ -77,12 +85,16 @@ export default function PropertyMap({
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       attribution:
         '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-      maxZoom: 19,
+      maxZoom: MAX_ZOOM,
     }).addTo(instance);
     // Marker clicks don't bubble to the map, so this only fires on empty space.
-    instance.on("click", (e: L.LeafletMouseEvent) =>
-      pick.current?.({ latitude: e.latlng.lat, longitude: e.latlng.lng }),
-    );
+    // While a small bubble's pins are fanned out, that click just closes them
+    // (markercluster does that itself) instead of starting a new place.
+    let fannedOut = false;
+    instance.on("click", (e: L.LeafletMouseEvent) => {
+      if (fannedOut) return;
+      pick.current?.({ latitude: e.latlng.lat, longitude: e.latlng.lng });
+    });
     const reportView = () => {
       // Report only the part of the map not covered by the floating panel.
       const size = instance.getSize();
@@ -101,15 +113,32 @@ export default function PropertyMap({
     instance.on("moveend", reportView);
     reportView();
     map.current = instance;
-    // Nearby pins merge into a counted bubble; clicking it zooms in, and pins
-    // that still overlap at full zoom fan out so each one can be chosen.
+    // Nearby pins merge into a counted bubble. Clicking a small bubble (under
+    // FAN_OUT_BELOW places) fans its pins out in place; a bigger one zooms in.
+    // At the closest zoom every building gets its own pin, never a bubble.
     markers.current = L.markerClusterGroup({
       maxClusterRadius: clusterRadius,
+      disableClusteringAtZoom: MAX_ZOOM,
       showCoverageOnHover: false,
       spiderfyOnMaxZoom: true,
-      zoomToBoundsOnClick: true,
+      // Rating pins are ~68 px wide; spread the fan so they don't overlap.
+      spiderfyDistanceMultiplier: 2.4,
+      zoomToBoundsOnClick: false,
       iconCreateFunction: clusterIcon,
     }).addTo(instance);
+    markers.current.on("clusterclick", (e: L.LeafletEvent) => {
+      const cluster = (e as L.LeafletEvent & { layer: L.MarkerCluster }).layer;
+      if (cluster.getChildCount() < FAN_OUT_BELOW) cluster.spiderfy();
+      else cluster.zoomToBounds({ padding: [40, 40] });
+    });
+    markers.current.on("spiderfied", () => {
+      fannedOut = true;
+      applyHighlight(highlight.current);
+    });
+    markers.current.on("unspiderfied", () => {
+      // Let the closing click finish first, so it isn't taken as a new place.
+      setTimeout(() => (fannedOut = false), 0);
+    });
     markers.current.on("animationend", () => applyHighlight(highlight.current));
     instance.on("zoomend", () => applyHighlight(highlight.current));
     const observer = new ResizeObserver(() => instance.invalidateSize());
@@ -161,6 +190,9 @@ export default function PropertyMap({
       const marker = L.marker([location.latitude, location.longitude], {
         icon,
         keyboard: true,
+        // Pins of buildings a few metres apart can overlap at full zoom; the
+        // hovered one comes to the front so it can be clicked.
+        riseOnHover: true,
         title: location.building_name || location.address,
         alt: `Read reviews of ${location.building_name || location.address}`,
       });
@@ -185,8 +217,10 @@ export default function PropertyMap({
   function reveal(marker: L.Marker, attempts = 3) {
     const instance = map.current;
     const group = markers.current;
-    if (!instance || !group || !group.hasLayer(marker) || attempts === 0) return;
-    const shown = group.getVisibleParent(marker) as L.Marker | L.MarkerCluster | null;
+    if (!instance || !group || !group.hasLayer(marker) || attempts === 0)
+      return;
+    const shown = group.getVisibleParent(marker) as
+      L.Marker | L.MarkerCluster | null;
     if (shown === marker) {
       // Nudge the map if the pin ended up under the floating panel.
       const p = instance.latLngToContainerPoint(marker.getLatLng());
@@ -194,12 +228,17 @@ export default function PropertyMap({
       if (p.x < edge) instance.panBy([p.x - edge - 80, 0]);
       return;
     }
-    if (shown && "spiderfy" in shown && instance.getZoom() >= instance.getMaxZoom()) {
+    if (
+      shown &&
+      "spiderfy" in shown &&
+      instance.getZoom() >= instance.getMaxZoom()
+    ) {
       shown.spiderfy();
       return;
     }
     // Zoom to where the pin's smallest cluster splits apart, then check again.
-    const parent = (marker as L.Marker & { __parent?: { _zoom: number } }).__parent;
+    const parent = (marker as L.Marker & { __parent?: { _zoom: number } })
+      .__parent;
     const zoom = Math.min(
       instance.getMaxZoom(),
       Math.max(instance.getZoom(), (parent?._zoom ?? instance.getZoom()) + 1),
@@ -232,6 +271,11 @@ export default function PropertyMap({
       map.current.setView(map.current.unproject(point, zoom), zoom);
     }
   }, [focus?.key]);
+  useEffect(() => {
+    // Redraw bubbles with or without "+" when the view becomes (in)complete.
+    markers.current?.refreshClusters();
+    applyHighlight(highlight.current);
+  }, [partial]);
   useEffect(() => {
     highlight.current = highlighted;
     applyHighlight(highlighted);
@@ -321,6 +365,11 @@ export function validBounds(b: L.LatLngBounds): Bounds {
  * city reads as a few well-spaced bubbles; tighter close up so single buildings
  * show as their own pins.
  */
+/** OpenStreetMap's closest tile level; pins are never grouped here. */
+const MAX_ZOOM = 19;
+/** Bubbles with fewer places than this open into their pins when clicked. */
+const FAN_OUT_BELOW = 10;
+
 export function clusterRadius(zoom: number) {
   if (zoom <= 13) return 160;
   if (zoom <= 15) return 130;
@@ -328,12 +377,19 @@ export function clusterRadius(zoom: number) {
   return 60;
 }
 
+/** Whether the PropertyMap on screen has only some of the places in view. */
+const isPartial = { current: false };
+
 function clusterIcon(cluster: L.MarkerCluster) {
   const count = cluster.getChildCount();
   const size = count < 10 ? 44 : count < 100 ? 52 : count < 1000 ? 60 : 68;
+  const label = isPartial.current
+    ? formatShortAtLeast(count)
+    : formatShort(count);
+  const spoken = `${isPartial.current ? "At least " : ""}${formatCount(count)} places`;
   return L.divIcon({
     className: "",
-    html: `<span class="map-cluster" style="width:${size}px;height:${size}px" aria-label="${formatCount(count)} places">${formatShort(count)}</span>`,
+    html: `<span class="map-cluster" style="width:${size}px;height:${size}px" aria-label="${spoken}">${label}</span>`,
     iconSize: [size, size],
     iconAnchor: [size / 2, size / 2],
   });

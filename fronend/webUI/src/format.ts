@@ -28,6 +28,19 @@ export function formatShort(n: number) {
   return String(n);
 }
 
+/**
+ * A lower bound for a count known to be incomplete, as a round number with "+":
+ * 7 → "7+", 57 → "50+", 373 → "300+", 1,234 → "1.2k+". Never overstates.
+ */
+export function formatShortAtLeast(n: number) {
+  if (n < 10) return `${n}+`;
+  if (n < 1000) {
+    const step = n < 100 ? 10 : 100;
+    return `${Math.floor(n / step) * step}+`;
+  }
+  return `${formatShort(n)}+`;
+}
+
 export function plural(n: number, one: string, many = `${one}s`) {
   return `${formatCount(n)} ${n === 1 ? one : many}`;
 }

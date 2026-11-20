@@ -1,5 +1,4 @@
 import math
-import time
 from typing import Annotated
 from uuid import UUID
 
@@ -135,53 +134,6 @@ def locations(
         limit,
         cursor,
     )
-
-
-# Site-wide totals scan every review, so they are cached briefly. At national
-# scale (crores of buildings) the landing page must never trigger a full scan
-# per visitor.
-STATS_TTL_SECONDS = 60
-_stats_cache: dict = {}
-
-
-@router.get("/stats")
-def stats(db: Session = Depends(get_db)):
-    cached = _stats_cache.get("data")
-    if cached and time.monotonic() - _stats_cache["at"] < STATS_TTL_SECONDS:
-        return {"data": cached}
-    live = TenantReview.deleted_at.is_(None)
-    tenant_count, average = db.execute(
-        select(func.count(TenantReview.id), func.avg(TenantReview.rating)).where(live)
-    ).one()
-    per_location = (
-        select(
-            Flat.location_id.label("location_id"),
-            func.avg(TenantReview.rating).label("rating"),
-            func.count(TenantReview.id).label("reviews"),
-        )
-        .join(TenantReview, TenantReview.flat_id == Flat.id)
-        .where(live)
-        .group_by(Flat.location_id)
-        .subquery()
-    )
-    star = func.least(5, func.greatest(1, func.round(per_location.c.rating)))
-    bands = dict(db.execute(select(star, func.count()).group_by(star)).all())
-    top_ids = db.scalars(
-        select(per_location.c.location_id)
-        .order_by(per_location.c.rating.desc(), per_location.c.reviews.desc())
-        .limit(3)
-    ).all()
-    data = {
-        "location_count": db.scalar(select(func.count(Location.id))),
-        "rated_location_count": sum(bands.values()),
-        "tenant_review_count": tenant_count,
-        "interaction_review_count": db.scalar(select(func.count(Interaction.id))),
-        "average_rating": round(float(average), 2) if average is not None else None,
-        "rating_bands": [{"stars": s, "count": int(bands.get(s, 0))} for s in (5, 4, 3, 2, 1)],
-        "top_rated": [location_data(db, db.get(Location, i)) for i in top_ids],
-    }
-    _stats_cache.update(data=data, at=time.monotonic())
-    return {"data": data}
 
 
 @router.get("/locations/{location_id}")

@@ -49,19 +49,12 @@ export type Interaction = {
   interaction_date: string;
   submitted_at: string;
 };
-export type Stats = {
-  location_count: number;
-  rated_location_count: number;
-  tenant_review_count: number;
-  interaction_review_count: number;
-  average_rating: number | null;
-  rating_bands: { stars: number; count: number }[];
-  top_rated: Location[];
-};
 export type Account = {
   id: string;
-  /** From the Google account; private to the account holder. */
+  /** From the Google account, or the user's own; private to the account holder. */
   name?: string | null;
+  /** True once the user has set their own name (Google no longer overwrites it). */
+  name_is_custom?: boolean;
   email: string | null;
   google_linked?: boolean;
   role: "user" | "admin";

@@ -91,7 +91,8 @@ def google_sign_in(
         response.headers["Location"] = "/api/v1/me"
         return {"data": {"outcome": "registered", **new_session(db, user)}}
     user.email = claims["email"]
-    user.name = google_name(claims)
+    if not user.name_is_custom:
+        user.name = google_name(claims)
     if user.status == "inactive":
         if not body.reactivate:
             # Reactivating is an explicit choice, confirmed by the user.
