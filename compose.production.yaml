@@ -1,0 +1,10 @@
+# Production on the shared Google Cloud VM (see docs/google-cloud-deployment.md).
+# Host Nginx terminates TLS for rentalreview.boringman.in and proxies to the web
+# container on loopback port 4180. meal-manager uses 4173 on the same VM. The API
+# and database have no host ports.
+services:
+  backend:
+    ports: !reset []
+  web:
+    ports: !override
+      - "127.0.0.1:4180:8080"

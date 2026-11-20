@@ -57,9 +57,11 @@ fronend/webUI/           React, TypeScript, Vite, Leaflet, Vitest, Nginx
 compose.yaml            Application stack and resource limits
 compose.test.yaml       Isolated PostgreSQL integration-test stack
 compose.ci.yaml         GitLab Docker-in-Docker port override
+compose.production.yaml Production override for the shared Google Cloud VM
 .github/workflows/ci.yml GitHub Actions CI/CD
 .gitlab/ci.yml          GitLab CI/CD
-scripts/                Smoke checks, deployment, database readiness
+deploy/                 VM bootstrap, Nginx/Certbot setup, production .env template
+scripts/                Smoke checks, database readiness
 ```
 
 ## Memory and persistence
@@ -107,19 +109,9 @@ in `.gitlab/ci.yml`. In GitLab, open **Settings → CI/CD → General pipelines*
 set **CI/CD configuration file** to `.gitlab/ci.yml`, and save the changes.
 See [GitLab's custom configuration instructions](https://docs.gitlab.com/ci/pipelines/settings/#specify-a-custom-cicd-configuration-file).
 
-Both pipelines run backend checks and real PostgreSQL integration tests, frontend tests/builds, then an assembled Docker Compose smoke check. Successful default-branch/tag pipelines publish backend and web images tagged `sha-<full commit SHA>`; the default branch also publishes `latest`. GitHub uses GHCR and `GITHUB_TOKEN`; GitLab uses its built-in container registry credentials. Pull/merge requests test without publishing. GitLab's Docker jobs require a privileged runner configured for TLS Docker-in-Docker with the shared `/certs/client` volume, as described in [GitLab's runner setup](https://docs.gitlab.com/ci/docker/using_docker_build/#use-the-docker-executor-with-docker-in-docker).
+Both pipelines run backend checks and real PostgreSQL integration tests, frontend tests/builds, then an assembled Docker Compose smoke check. Successful push pipelines publish backend and web images tagged `sha-<full commit SHA>`; the default branch also publishes `latest`. GitHub uses GHCR and `GITHUB_TOKEN`; GitLab uses its built-in container registry credentials. Pull/merge requests test without publishing. GitLab's Docker jobs require a privileged runner configured for TLS Docker-in-Docker with the shared `/certs/client` volume, as described in [GitLab's runner setup](https://docs.gitlab.com/ci/docker/using_docker_build/#use-the-docker-executor-with-docker-in-docker).
 
-Deployment is optional because no hosting target was supplied. Provision a Docker host and production `.env` in an absolute directory such as `/opt/rental-review`. Authenticate that host to the container registry, put HTTPS in front of its loopback web port, and configure:
-
-| Setting | GitHub | GitLab |
-| --- | --- | --- |
-| Enable deployment | Repository variable `ENABLE_DEPLOY=true` | CI variable `ENABLE_DEPLOY=true` |
-| Target directory | Variable `DEPLOY_PATH` | Variable `DEPLOY_PATH` |
-| Host and user | Secrets `DEPLOY_HOST`, `DEPLOY_USER` | Variables `DEPLOY_HOST`, `DEPLOY_USER` |
-| Private SSH key (multiline value) | Secret `DEPLOY_SSH_KEY` | Masked/protected variable `SSH_PRIVATE_KEY` |
-| Pinned known_hosts entries | Secret `DEPLOY_KNOWN_HOSTS` | Variable `SSH_KNOWN_HOSTS` |
-
-The checked-in SSH script validates its inputs and requires pinned host keys. A `v*` tag enables the GitHub production environment job and the GitLab manual deployment job. Configure approval rules in GitHub's `production` environment or GitLab protected environments if desired. Deployment pulls immutable SHA-tagged images and waits for health checks. For rollback, redeploy an earlier known-good SHA tag; database changes must remain compatible. Automatic database rollback is not provided.
+Pushes to `topic/parth/plan` also **deploy to production** at <https://rentalreview.boringman.in>, after all checks pass, using the same flow as meal-manager. The deploy job SSHes into the Google Cloud VM it shares with meal-manager, checks out the tested commit in `~/rental-review`, writes `.env` from `deploy/production.env.example`, runs `make deploy`, then installs a named host Nginx site with a Let's Encrypt certificate. Setup, required variables and secrets, and rollback are in [docs/google-cloud-deployment.md](docs/google-cloud-deployment.md).
 
 ## Configuration and working-model boundaries
 
