@@ -2041,3 +2041,17 @@ select {
 .nowrap {
   white-space: nowrap;
 }
+
+.account-who {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.account-who strong {
+  color: var(--ink);
+}
+.account-who strong + span {
+  font-size: 13px;
+  color: var(--muted);
+}

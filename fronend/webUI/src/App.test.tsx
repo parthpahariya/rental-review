@@ -530,7 +530,15 @@ describe("Rental Review", () => {
       vi.fn((input: string, init?: RequestInit) => {
         if (input.endsWith("/me"))
           return Promise.resolve(
-            result({ id: "me", email: "me@example.com", role: "user" }, false),
+            result(
+              {
+                id: "me",
+                name: "Asha Rao",
+                email: "me@example.com",
+                role: "user",
+              },
+              false,
+            ),
           );
         if (input.includes("/me/tenant-reviews"))
           return Promise.resolve(
@@ -558,6 +566,8 @@ describe("Rental Review", () => {
       await screen.findByRole("button", { name: "Your account" }),
     );
     expect(await screen.findByText("Places you added")).toBeInTheDocument();
+    expect(screen.getByText("Asha Rao")).toBeInTheDocument();
+    expect(screen.getByText("me@example.com")).toBeInTheDocument();
     expect(screen.getByText("You added this building")).toBeInTheDocument();
     const links = await screen.findAllByRole("button", {
       name: /Parkside Residences · Flat A-204/,

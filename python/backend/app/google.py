@@ -48,6 +48,12 @@ def verify_credential(credential):
     return claims
 
 
+def google_name(claims):
+    """The account's display name, trimmed to fit; None when Google sends none."""
+    name = " ".join(str(claims.get("name") or "").split())
+    return name[:200] or None
+
+
 @router.get("/auth/providers")
 def providers():
     audiences = get_settings().google_audiences
@@ -75,6 +81,7 @@ def google_sign_in(
         user = User(
             google_subject=subject,
             email=claims["email"],
+            name=google_name(claims),
             mobile_number=None,
             mobile_verified_at=None,
         )
@@ -84,6 +91,7 @@ def google_sign_in(
         response.headers["Location"] = "/api/v1/me"
         return {"data": {"outcome": "registered", **new_session(db, user)}}
     user.email = claims["email"]
+    user.name = google_name(claims)
     if user.status == "inactive":
         if not body.reactivate:
             # Reactivating is an explicit choice, confirmed by the user.

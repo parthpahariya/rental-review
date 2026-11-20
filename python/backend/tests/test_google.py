@@ -35,6 +35,7 @@ def test_first_sign_in_creates_account(client):
     auth = {"Authorization": f"Bearer {data['session']['token']}"}
     assert client.get("/api/v1/me", headers=auth).json()["data"]["id"] == data["account"]["id"]
 
+    assert data["account"]["name"] is None  # the test token carries no name
     again = google_sign_in(client, token(email="renamed@example.com"))
     assert again.status_code == 200
     assert again.json()["data"]["outcome"] == "signed_in"
@@ -97,3 +98,28 @@ def test_reviews_never_expose_email(client, flat_id):
     # Public review data never exposes the author's email.
     assert "tenant@example.com" not in client.get(
         f"/api/v1/flats/{flat_id}/tenant-reviews").text
+
+
+def test_name_is_stored_and_refreshed_but_never_public(client, flat_id):
+    first = google_sign_in(client, token(name="  Asha   Rao ")).json()["data"]
+    assert first["account"]["name"] == "Asha Rao"
+    renamed = google_sign_in(client, token(name="Asha R.")).json()["data"]
+    assert renamed["account"]["name"] == "Asha R."
+    auth = {"Authorization": f"Bearer {renamed['session']['token']}"}
+    assert client.get("/api/v1/me", headers=auth).json()["data"]["name"] == "Asha R."
+    # Overlong names are cut to fit rather than failing sign-in.
+    long = google_sign_in(client, token(name="x" * 300)).json()["data"]
+    assert len(long["account"]["name"]) == 200
+    client.post(
+        f"/api/v1/flats/{flat_id}/tenant-reviews",
+        headers=auth,
+        json={
+            "owner_name": "Owner One",
+            "rating": 4,
+            "feedback": "Helpful.",
+            "tenancy_start_date": "2024-01-01",
+            "tenancy_end_date": "2025-01-01",
+        },
+    )
+    public = client.get(f"/api/v1/flats/{flat_id}/tenant-reviews").text
+    assert "Asha" not in public and "xxxxxxxxxx" not in public

@@ -60,6 +60,8 @@ export type Stats = {
 };
 export type Account = {
   id: string;
+  /** From the Google account; private to the account holder. */
+  name?: string | null;
   email: string | null;
   google_linked?: boolean;
   role: "user" | "admin";

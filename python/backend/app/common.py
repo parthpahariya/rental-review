@@ -80,7 +80,7 @@ def fields(row, names):
 def account_data(user):
     return fields(
         user,
-        "id email role status deactivated_at created_at updated_at",
+        "id name email role status deactivated_at created_at updated_at",
     ) | {"google_linked": user.google_subject is not None}
 
 

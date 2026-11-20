@@ -656,7 +656,10 @@ export function AccountPanel({
   return (
     <Modal title="Your rental notebook" onClose={onClose}>
       <div className="account-bar">
-        <span>{account.email}</span>
+        <span className="account-who">
+          {account.name && <strong>{account.name}</strong>}
+          <span>{account.email}</span>
+        </span>
         <button
           disabled={busy}
           className="text-button"
