@@ -76,8 +76,13 @@ compose-smoke:
     COMPOSE_PROJECT_NAME: rental-review-ci
     COMPOSE_FILE: compose.yaml:compose.ci.yaml
   script:
-    - apk add --no-cache python3
+    - apk add --no-cache bash openssl python3
     - docker compose config --quiet
+    # Deployment scripts and production configuration, as on GitHub.
+    - bash -n deploy/*.sh
+    - python3 -m unittest discover -s deploy/tests -v
+    - POSTGRES_PASSWORD=validation-only-password SECRET_KEY=validation-only-secret-key-that-is-long-enough GOOGLE_CLIENT_IDS=validation-only.apps.googleusercontent.com docker compose -f compose.yaml -f compose.production.yaml config --quiet
+    - bash deploy/check-nginx.sh
     - docker compose up --build -d --wait --wait-timeout 180
     - python3 scripts/smoke.py http://docker:8080
   after_script:

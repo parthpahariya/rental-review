@@ -97,7 +97,7 @@ jobs:
           bash -n deploy/*.sh
           python3 -m unittest discover -s deploy/tests -v
           docker compose -f compose.yaml -f compose.production.yaml config --quiet
-          docker run --rm -v "$PWD/deploy/nginx-http.conf:/etc/nginx/conf.d/default.conf:ro" nginx:1.29-alpine nginx -t
+          bash deploy/check-nginx.sh
       - run: docker compose up --build -d --wait --wait-timeout 180
       - run: python3 scripts/smoke.py http://localhost:8080
       - name: Container logs

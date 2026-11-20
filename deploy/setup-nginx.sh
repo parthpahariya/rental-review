@@ -25,6 +25,9 @@ if [[ -s "$certbot_dir/live/$domain/fullchain.pem" && -s "$certbot_dir/live/$dom
     config=nginx.conf
 fi
 install -m 644 "$project_dir/deploy/$config" "$site"
+# As in meal-manager: Debian's stock site is also a default_server and would clash
+# with meal-manager's. Never touch meal-manager's own site file.
+rm -f "$nginx_dir/sites-enabled/default"
 
 nginx -t
 systemctl enable --now nginx
