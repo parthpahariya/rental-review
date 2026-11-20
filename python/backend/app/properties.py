@@ -10,12 +10,14 @@ from sqlalchemy.orm import Session
 from .common import current_user, fail, fields, get_or_404, lock, page
 from .database import get_db
 from .models import Flat, Interaction, Location, ProofPolicy, TenantReview, User, now
-from .schemas import FlatBody, LocationBody
+from .schemas import FlatBody, LocationBody, LocationEditBody
 
 router = APIRouter()
 Limit = Annotated[int, Query(ge=1, le=100)]
-# A new pin closer than this to an existing location is treated as the same place.
+# A new unnamed pin this close to an existing place is taken to be that place.
 DUPLICATE_RADIUS_METRES = 30
+# A new building with the same name this close is the same building pinned slightly off.
+SAME_NAME_RADIUS_METRES = 100
 EARTH_RADIUS_METRES = 6_371_000
 
 
@@ -215,7 +217,29 @@ def distance_metres(lat1, lon1, lat2, lon2):
     return 2 * EARTH_RADIUS_METRES * math.asin(math.sqrt(a))
 
 
-def nearest_location(db, latitude, longitude, radius=DUPLICATE_RADIUS_METRES):
+def same_name(a, b):
+    return " ".join((a or "").split()).casefold() == " ".join((b or "").split()).casefold()
+
+
+def duplicate_location(db, latitude, longitude, building_name, exclude=None):
+    """The existing place a new pin would duplicate, if any.
+
+    Neighbouring buildings can be a few metres apart, so a named building is only a
+    duplicate of a nearby place with the same name. Without a name there is nothing
+    to tell two places apart, so any place within 30 m counts.
+    """
+    if building_name:
+        return nearest_location(
+            db,
+            latitude,
+            longitude,
+            SAME_NAME_RADIUS_METRES,
+            lambda row: row.id != exclude and same_name(row.building_name, building_name),
+        )
+    return nearest_location(db, latitude, longitude, match=lambda row: row.id != exclude)
+
+
+def nearest_location(db, latitude, longitude, radius=DUPLICATE_RADIUS_METRES, match=None):
     # Prefilter with a bounding box, then measure exact distance.
     dlat = math.degrees(radius / EARTH_RADIUS_METRES)
     dlon = dlat / max(math.cos(math.radians(latitude)), 0.01)
@@ -228,19 +252,25 @@ def nearest_location(db, latitude, longitude, radius=DUPLICATE_RADIUS_METRES):
     scored = [
         (distance_metres(latitude, longitude, row.latitude, row.longitude), row)
         for row in candidates
+        if match is None or match(row)
     ]
     scored = [item for item in scored if item[0] <= radius]
     return min(scored, key=lambda item: item[0])[1] if scored else None
 
 
-def add_flat(db, location_id, label):
-    if db.scalar(
-        select(Flat.id).where(
-            Flat.location_id == location_id, func.lower(Flat.label) == label.lower()
-        )
-    ):
+def check_flat_label(db, location_id, label, exclude=None):
+    query = select(Flat.id).where(
+        Flat.location_id == location_id, func.lower(Flat.label) == label.lower()
+    )
+    if exclude is not None:
+        query = query.where(Flat.id != exclude)
+    if db.scalar(query):
         fail(409, "FLAT_ALREADY_EXISTS", f"Flat {label} is already listed at this place.")
-    row = Flat(location_id=location_id, label=label)
+
+
+def add_flat(db, location_id, label, user):
+    check_flat_label(db, location_id, label)
+    row = Flat(location_id=location_id, label=label, created_by=user.id)
     db.add(row)
     db.flush()
     return row
@@ -255,23 +285,25 @@ def create_location(
 ):
     # Serialize creation so two people pinning the same spot cannot both succeed.
     lock(db, "locations:create")
-    existing = nearest_location(db, body.latitude, body.longitude)
+    existing = duplicate_location(db, body.latitude, body.longitude, body.building_name)
     if existing:
         fail(
             409,
             "LOCATION_ALREADY_EXISTS",
             f"{existing.building_name or existing.address} is already on the map here. "
-            "Review it instead, or add your flat to it.",
+            "Review it instead, or add your flat to it."
+            + ("" if body.building_name else " If yours is a different building, add its name."),
         )
     location = Location(
         address=body.address,
         building_name=body.building_name,
         latitude=body.latitude,
         longitude=body.longitude,
+        created_by=user.id,
     )
     db.add(location)
     db.flush()
-    flat = add_flat(db, location.id, body.flat_label)
+    flat = add_flat(db, location.id, body.flat_label, user)
     response.headers["Location"] = f"/api/v1/flats/{flat.id}"
     return {"data": flat_data(db, flat)}
 
@@ -285,6 +317,144 @@ def create_flat(
     db: Session = Depends(get_db),
 ):
     get_or_404(db, Location, location_id, True)
-    flat = add_flat(db, location_id, body.label)
+    flat = add_flat(db, location_id, body.label, user)
     response.headers["Location"] = f"/api/v1/flats/{flat.id}"
+    return {"data": flat_data(db, flat)}
+
+
+# Editing what you added: the creator can fix a place or flat until somebody else
+# has contributed to it. After that, others' reviews depend on it staying put.
+
+
+def others_contributed(db, user, flat_ids):
+    """Whether anyone but `user` has a review or interaction on these flats."""
+    tenant = select(TenantReview.id).where(
+        TenantReview.flat_id.in_(flat_ids),
+        TenantReview.author_id != user.id,
+        TenantReview.deleted_at.is_(None),
+    )
+    interaction = select(Interaction.id).where(
+        Interaction.flat_id.in_(flat_ids), Interaction.author_id != user.id
+    )
+    return bool(db.scalar(select(exists(tenant))) or db.scalar(select(exists(interaction))))
+
+
+NOT_YOURS = 403, "FORBIDDEN"
+LOCKED = 409, "EDIT_LOCKED"
+
+
+def location_lock_reason(db, location, user):
+    """None if `user` may edit the place, else (status, code, message)."""
+    if location.created_by != user.id:
+        return *NOT_YOURS, "You can only edit places you added."
+    flat_ids = select(Flat.id).where(Flat.location_id == location.id)
+    other_flats = select(Flat.id).where(
+        Flat.location_id == location.id,
+        or_(Flat.created_by.is_(None), Flat.created_by != user.id),
+    )
+    if db.scalar(select(exists(other_flats))) or others_contributed(db, user, flat_ids):
+        return *LOCKED, "Other people have added to this place, so it can no longer be edited."
+    return None
+
+
+def flat_lock_reason(db, flat, user):
+    if flat.created_by != user.id:
+        return *NOT_YOURS, "You can only edit flats you added."
+    if others_contributed(db, user, [flat.id]):
+        return *LOCKED, "Other people have reviewed this flat, so it can no longer be edited."
+    return None
+
+
+@router.get("/me/flats")
+def own_flats(
+    limit: Limit = 20,
+    cursor: str | None = None,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Flats the user added; `added_place` is true when they pinned the building too."""
+
+    def data(row):
+        location = db.get(Location, row.location_id)
+        return flat_data(db, row) | {
+            "added_place": location.created_by == user.id,
+            "can_edit": flat_lock_reason(db, row, user) is None,
+        }
+
+    return page(
+        db,
+        select(Flat).where(Flat.created_by == user.id),
+        Flat,
+        data,
+        f"own-flats:{user.id}",
+        limit,
+        cursor,
+    )
+
+
+@router.get("/locations/{location_id}/permissions")
+def location_permissions(
+    location_id: UUID, user: User = Depends(current_user), db: Session = Depends(get_db)
+):
+    location = get_or_404(db, Location, location_id)
+    flats = db.scalars(select(Flat).where(Flat.location_id == location_id)).all()
+    return {
+        "data": {
+            "can_edit_location": location_lock_reason(db, location, user) is None,
+            "editable_flat_ids": [f.id for f in flats if flat_lock_reason(db, f, user) is None],
+        }
+    }
+
+
+@router.patch("/locations/{location_id}")
+def edit_location(
+    location_id: UUID,
+    body: LocationEditBody,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    # Same lock as creation, so an edit can't race a new pin into a duplicate.
+    lock(db, "locations:create")
+    location = get_or_404(db, Location, location_id, True)
+    if reason := location_lock_reason(db, location, user):
+        fail(*reason)
+    changes = body.model_dump(exclude_unset=True)
+    name = changes.get("building_name", location.building_name)
+    latitude = changes.get("latitude", location.latitude)
+    longitude = changes.get("longitude", location.longitude)
+    moved_or_renamed = (
+        latitude != location.latitude
+        or longitude != location.longitude
+        or not same_name(name, location.building_name)
+    )
+    existing = moved_or_renamed and duplicate_location(
+        db, latitude, longitude, name, exclude=location.id
+    )
+    if existing:
+        fail(
+            409,
+            "LOCATION_ALREADY_EXISTS",
+            f"{existing.building_name or existing.address} is already on the map here.",
+        )
+    for key, value in changes.items():
+        setattr(location, key, value)
+    location.updated_at = now()
+    db.flush()
+    return {"data": location_data(db, location)}
+
+
+@router.patch("/flats/{flat_id}")
+def edit_flat(
+    flat_id: UUID,
+    body: FlatBody,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    flat = get_or_404(db, Flat, flat_id, True)
+    if reason := flat_lock_reason(db, flat, user):
+        fail(*reason)
+    check_flat_label(db, flat.location_id, body.label, exclude=flat.id)
+    flat.label = body.label
+    flat.updated_at = now()
+    db.flush()
     return {"data": flat_data(db, flat)}

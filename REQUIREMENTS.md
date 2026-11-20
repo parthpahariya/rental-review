@@ -159,6 +159,6 @@ Only unresolved questions are listed below. Once a decision is made, record it i
 
 - **Registration:** Which account fields are required in addition to the Google account?
 - **Interactions:** Can authors edit or delete interaction reviews, or link them to a tenant review?
-- **Property records:** Signed-in users add locations by pinning an empty map point and add flats to existing locations. A new pin within 30 metres of an existing location and a repeated flat label are rejected. Merging or correcting duplicates that slip through (for example, a building pinned twice 40 metres apart) is still undecided.
+- **Property records:** Signed-in users add locations by pinning an empty map point and add flats to existing locations. A new pin is rejected as a duplicate when an existing location with the same building name is within 100 metres, or, for an unnamed pin, when any location is within 30 metres; differently named neighbouring buildings are allowed. A repeated flat label is rejected. Merging or correcting duplicates that slip through (for example, a building pinned twice 40 metres apart) is still undecided.
 - **Map clicks (decided):** Selecting a marker opens its flats and reviews. Selecting an empty point drops a draggable pin for adding a new place, and lists existing places within 100 metres so users can review those instead.
 - **Map service:** Which map provider and geographic coverage should be used?

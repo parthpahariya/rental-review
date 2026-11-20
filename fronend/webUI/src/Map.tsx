@@ -11,7 +11,7 @@ export type Bounds = {
   east: number;
   north: number;
 };
-export type MapView = { center: Point; bounds: Bounds };
+export type MapView = { center: Point; bounds: Bounds; zoom: number };
 /** A place to move the map to; change `key` to move there again. */
 export type Focus = {
   key: number;
@@ -95,6 +95,7 @@ export default function PropertyMap({
       viewChange.current?.({
         center: { latitude: c.lat, longitude: wrapLongitude(c.lng) },
         bounds: validBounds(b),
+        zoom: instance.getZoom(),
       });
     };
     instance.on("moveend", reportView);
@@ -103,7 +104,7 @@ export default function PropertyMap({
     // Nearby pins merge into a counted bubble; clicking it zooms in, and pins
     // that still overlap at full zoom fan out so each one can be chosen.
     markers.current = L.markerClusterGroup({
-      maxClusterRadius: 60,
+      maxClusterRadius: clusterRadius,
       showCoverageOnHover: false,
       spiderfyOnMaxZoom: true,
       zoomToBoundsOnClick: true,
@@ -313,6 +314,18 @@ export function validBounds(b: L.LatLngBounds): Bounds {
     east: wrapLongitude(b.getEast()),
     north,
   };
+}
+
+/**
+ * How far (px) pins reach to merge into one bubble. Wide when zoomed out so the
+ * city reads as a few well-spaced bubbles; tighter close up so single buildings
+ * show as their own pins.
+ */
+export function clusterRadius(zoom: number) {
+  if (zoom <= 13) return 160;
+  if (zoom <= 15) return 130;
+  if (zoom <= 16) return 100;
+  return 60;
 }
 
 function clusterIcon(cluster: L.MarkerCluster) {

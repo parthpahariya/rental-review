@@ -17,6 +17,7 @@ from .common import (
     interaction_data,
     own_review_data,
     page,
+    place_of,
     review_data,
 )
 from .database import get_db
@@ -151,17 +152,22 @@ def edit_review(
 
 @router.get("/me/tenant-reviews")
 def own_reviews(
+    flat_id: UUID | None = None,
     limit: Limit = 20,
     cursor: str | None = None,
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
+    query = select(TenantReview).where(TenantReview.author_id == user.id)
+    if flat_id is not None:
+        # Lets a flat's page mark which of its reviews are the viewer's own.
+        query = query.where(TenantReview.flat_id == flat_id)
     return page(
         db,
-        select(TenantReview).where(TenantReview.author_id == user.id),
+        query,
         TenantReview,
         lambda r: own_review_data(db, r),
-        f"own-reviews:{user.id}",
+        f"own-reviews:{user.id}:{flat_id}",
         limit,
         cursor,
         True,
@@ -261,7 +267,7 @@ def own_interactions(
         db,
         select(Interaction).where(Interaction.author_id == user.id),
         Interaction,
-        lambda r: interaction_data(db, r),
+        lambda r: interaction_data(db, r) | {"place": place_of(db, r.flat_id)},
         f"own-interactions:{user.id}",
         limit,
         cursor,
@@ -275,7 +281,7 @@ def own_interaction(
 ):
     row = get_or_404(db, Interaction, interaction_id)
     require_author(row, user, True)
-    return {"data": interaction_data(db, row)}
+    return {"data": interaction_data(db, row) | {"place": place_of(db, row.flat_id)}}
 
 
 def attachment_data(db, row):

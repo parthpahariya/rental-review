@@ -114,6 +114,31 @@ class FlatBody(Body):
     label: FlatLabel
 
 
+class LocationEditBody(Body):
+    """Partial edit of a place; send only the fields that change."""
+
+    address: Annotated[
+        str, StringConstraints(strict=True, strip_whitespace=True, min_length=1, max_length=500)
+    ] | None = None
+    building_name: ShortText | None = None
+    latitude: Annotated[float, Field(strict=True, ge=-90, le=90, allow_inf_nan=False)] | None = None
+    longitude: (
+        Annotated[float, Field(strict=True, ge=-180, le=180, allow_inf_nan=False)] | None
+    ) = None
+
+    @model_validator(mode="after")
+    def complete(self):
+        sent = self.model_fields_set
+        if not sent:
+            raise ValueError("Provide at least one field to change")
+        if ("latitude" in sent) != ("longitude" in sent):
+            raise ValueError("Move the pin with both latitude and longitude")
+        for key in sent - {"building_name"}:
+            if getattr(self, key) is None:
+                raise ValueError(f"{key} cannot be null")
+        return self
+
+
 class LocationBody(Body):
     address: Annotated[
         str, StringConstraints(strict=True, strip_whitespace=True, min_length=1, max_length=500)

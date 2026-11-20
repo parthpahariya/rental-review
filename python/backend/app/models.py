@@ -89,6 +89,9 @@ class Location(Identity, Timestamps, Base):
     building_name: Mapped[str | None] = mapped_column(String(200))
     latitude: Mapped[float]
     longitude: Mapped[float]
+    # Who pinned it; they may edit it until someone else contributes. Null for
+    # seeded places and those added before this was recorded.
+    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), index=True)
     __table_args__ = (
         CheckConstraint("latitude BETWEEN -90 AND 90"),
         CheckConstraint("longitude BETWEEN -180 AND 180"),
@@ -102,6 +105,7 @@ class Flat(Identity, Timestamps, Base):
     __tablename__ = "flats"
     location_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("locations.id"), index=True)
     label: Mapped[str] = mapped_column(String(100))
+    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), index=True)
     __table_args__ = (CheckConstraint("length(trim(label)) > 0"),)
 
 

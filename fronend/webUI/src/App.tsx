@@ -3,7 +3,9 @@ import {
   AccountPanel,
   AddFlatForm,
   AddPlaceForm,
+  EditPlaceForm,
   ErrorNotice,
+  FeedbackCard,
   Icon,
   Modal,
   ReviewForm,
@@ -13,16 +15,26 @@ import PropertyMap from "./Map";
 import LocalitySearch, { DEFAULT_CENTER } from "./LocalitySearch";
 import type { Area } from "./LocalitySearch";
 import type { Bounds, Focus, MapView, Point } from "./Map";
-import { api, allPages, hasToken, message, setToken, somePages } from "./api";
+import {
+  api,
+  allPages,
+  hasToken,
+  message,
+  patch,
+  setToken,
+  somePages,
+} from "./api";
 import type {
   Account,
   Flat,
   Interaction,
   Location,
+  Permissions,
   Review,
   Stats,
 } from "./api";
 import { formatAtLeast, formatCount, plural } from "./format";
+import { readUrlState, writeUrlState } from "./urlState";
 
 export default function App() {
   // Only the places inside the visible map area: the full catalogue is far
@@ -31,14 +43,31 @@ export default function App() {
   const [more, setMore] = useState(false);
   const [stats, setStats] = useState<Stats | null>(null);
   const [statsError, setStatsError] = useState(false);
+  // A refresh or shared link reopens the spot saved in the address bar.
+  const [restored] = useState(readUrlState);
   // The map stays hidden until the visitor picks a locality to look at.
-  const [area, setArea] = useState<Area | null>(null);
-  const [focus, setFocus] = useState<Focus | null>(null);
+  const [area, setArea] = useState<Area | null>(() =>
+    restored.at
+      ? {
+          name: restored.area || "This map area",
+          center: restored.at,
+          zoom: restored.at.zoom,
+        }
+      : null,
+  );
+  const [focus, setFocus] = useState<Focus | null>(() =>
+    restored.at
+      ? { key: 1, center: restored.at, zoom: restored.at.zoom }
+      : null,
+  );
   const [selected, setSelected] = useState<Location | null>(null);
   const [flats, setFlats] = useState<Flat[]>([]);
   const [flat, setFlat] = useState<Flat | null>(null);
   const [tab, setTab] = useState<"tenant" | "interaction">("tenant");
   const [reviews, setReviews] = useState<Review[]>([]);
+  /** The signed-in user's own reviews of the selected flat, by id. */
+  const [mine, setMine] = useState<Map<string, Review>>(new Map());
+  const [editingReview, setEditingReview] = useState<Review | null>(null);
   const [interactions, setInteractions] = useState<Interaction[]>([]);
   const [account, setAccount] = useState<Account | null>(null);
   const [dialog, setDialog] = useState<Dialog | null>(null);
@@ -57,13 +86,18 @@ export default function App() {
     return () => window.removeEventListener("resize", update);
   }, []);
   // Flat to open after a reload, and the dialog to resume after signing in.
-  const wantFlat = useRef<string | null>(null);
+  const wantFlat = useRef<string | null>(restored.flat);
   const afterSignIn = useRef<Dialog | null>(null);
   const [loading, setLoading] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
   const [error, setError] = useState("");
   const [detailError, setDetailError] = useState("");
   const [version, setVersion] = useState(0);
+  /** What the signed-in user may edit at the selected place, if anything. */
+  const [perms, setPerms] = useState<Permissions | null>(null);
+  /** True while the place's creator drags its pin to a new spot. */
+  const [moving, setMoving] = useState(false);
+  const [savingPin, setSavingPin] = useState(false);
   const [notice, setNotice] = useState("");
   const panelRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -96,6 +130,33 @@ export default function App() {
       live = false;
     };
   }, [version]);
+  useEffect(() => {
+    // Reopen the place that was open before the refresh.
+    if (!restored.place) return;
+    let live = true;
+    api<{ data: Location }>(`/locations/${restored.place}`)
+      .then((r) => {
+        if (live) selectLocation(r.data);
+      })
+      .catch(() => {
+        // It may have been removed; the map area still opens.
+      });
+    return () => {
+      live = false;
+    };
+  }, []);
+  useEffect(() => {
+    writeUrlState({
+      at: !area
+        ? null
+        : view
+          ? { ...view.center, zoom: view.zoom ?? area.zoom ?? 15 }
+          : { ...area.center, zoom: area.zoom ?? 15 },
+      area: area?.name ?? null,
+      place: area ? (selected?.id ?? null) : null,
+      flat: flat?.id ?? null,
+    });
+  }, [area, view, selected?.id, flat?.id]);
   // Until the map reports its view, use the area the visitor picked.
   const queryBounds = view?.bounds ?? (area ? areaBounds(area) : null);
   const bbox = queryBounds
@@ -160,6 +221,36 @@ export default function App() {
     };
   }, [selected?.id, flatsVersion]);
   useEffect(() => {
+    setPerms(null);
+    if (!selected || !account) return;
+    let live = true;
+    api<{ data: Permissions }>(`/locations/${selected.id}/permissions`)
+      .then((r) => {
+        if (live && Array.isArray(r.data?.editable_flat_ids)) setPerms(r.data);
+      })
+      .catch(() => {
+        // Without permissions the place simply shows no edit button.
+      });
+    return () => {
+      live = false;
+    };
+  }, [selected?.id, account?.id, flatsVersion, version]);
+  useEffect(() => {
+    setMine(new Map());
+    if (!flat || !account) return;
+    let live = true;
+    allPages<Review>(`/me/tenant-reviews?flat_id=${flat.id}`)
+      .then((rows) => {
+        if (live) setMine(new Map(rows.map((r) => [r.id, r])));
+      })
+      .catch(() => {
+        // Without this, the reviews simply show no edit buttons.
+      });
+    return () => {
+      live = false;
+    };
+  }, [flat?.id, account?.id, version]);
+  useEffect(() => {
     if (!flat) return;
     let live = true;
     setDetailLoading(true);
@@ -194,6 +285,7 @@ export default function App() {
   }, [notice]);
   function selectLocation(location: Location) {
     setDraft(null);
+    setMoving(false);
     setSelected(location);
     // Details replace the list in the side panel; start them from the top.
     if (panelRef.current) panelRef.current.scrollTop = 0;
@@ -202,6 +294,7 @@ export default function App() {
     setArea(next);
     setSelected(null);
     setDraft(null);
+    setMoving(false);
     setFocus((f) => ({ ...next, key: (f?.key ?? 0) + 1 }));
     window.scrollTo({ top: 0 });
   }
@@ -213,6 +306,27 @@ export default function App() {
       zoom: 17,
     });
     selectLocation(location);
+  }
+  /** Opens a place from the notebook with that flat and tab showing. */
+  async function openOwn(
+    locationId: string,
+    flatId: string,
+    kind: "tenant" | "interaction",
+  ) {
+    try {
+      const place = (await api<{ data: Location }>(`/locations/${locationId}`))
+        .data;
+      setDialog(null);
+      setTab(kind);
+      wantFlat.current = flatId;
+      if (selected?.id === place.id) {
+        // Same place already open: just switch to the flat.
+        setFlat(flats.find((f) => f.id === flatId) || flat);
+        wantFlat.current = null;
+      } else openPlace(place);
+    } catch (e) {
+      setNotice(message(e));
+    }
   }
   function browseAll() {
     openArea({
@@ -292,7 +406,47 @@ export default function App() {
   const closeDetails = () => {
     setSelected(null);
     setFlat(null);
+    setDraft(null);
+    setMoving(false);
   };
+  const canEditFlat = !!flat && !!perms?.editable_flat_ids.includes(flat.id);
+  const canEdit = !!perms?.can_edit_location || canEditFlat;
+  function placeEdited(location: Location | null, edited: Flat | null) {
+    setDialog(null);
+    if (location && selected)
+      setSelected({ ...selected, ...location, summary: selected.summary });
+    if (edited) {
+      wantFlat.current = edited.id;
+      setFlatsVersion((v) => v + 1);
+    }
+    if (location) setVersion((v) => v + 1); // Refresh pins and the list.
+    if (location || edited) setNotice("Your changes are saved.");
+  }
+  function startMovingPin() {
+    if (!selected) return;
+    setDialog(null);
+    setMoving(true);
+    setDraft({ latitude: selected.latitude, longitude: selected.longitude });
+  }
+  async function savePin() {
+    if (!selected || !draft) return;
+    setSavingPin(true);
+    try {
+      const moved = (
+        await patch<{ data: Location }>(`/locations/${selected.id}`, {
+          latitude: draft.latitude,
+          longitude: draft.longitude,
+        })
+      ).data;
+      setMoving(false);
+      setDraft(null);
+      placeEdited(moved, null);
+    } catch (e) {
+      setNotice(message(e));
+    } finally {
+      setSavingPin(false);
+    }
+  }
   return (
     <>
       <a className="skip-link" href={area ? "#panel" : "#main"}>
@@ -644,6 +798,14 @@ export default function App() {
                   <p>
                     <Icon name="pin" size={16} /> {selected.address}
                   </p>
+                  {canEdit && (
+                    <button
+                      className="text-button edit-place"
+                      onClick={() => setDialog("edit")}
+                    >
+                      <Icon name="edit" size={16} /> Edit what you added
+                    </button>
+                  )}
                 </header>
                 <dl className="detail-stats">
                   <div>
@@ -788,50 +950,12 @@ export default function App() {
                         )}
                         <div className="review-list">
                           {items.map((item) => (
-                            <article className="review-card" key={item.id}>
-                              <header>
-                                <span className="avatar" aria-hidden="true">
-                                  {item.owner_name
-                                    .trim()
-                                    .charAt(0)
-                                    .toUpperCase()}
-                                </span>
-                                <span className="review-who">
-                                  <strong>Owner: {item.owner_name}</strong>
-                                  <span>
-                                    {"rating" in item
-                                      ? `Tenancy · ${formatDate(item.tenancy_start_date)} – ${formatDate(item.tenancy_end_date)}`
-                                      : `Interaction · ${formatDate(item.interaction_date)}`}
-                                  </span>
-                                </span>
-                                {"rating" in item && (
-                                  <span
-                                    className="stars"
-                                    role="img"
-                                    aria-label={`${item.rating} out of 5 stars`}
-                                  >
-                                    {[1, 2, 3, 4, 5].map((n) => (
-                                      <span
-                                        key={n}
-                                        className={n <= item.rating ? "on" : ""}
-                                      >
-                                        <Icon name="star" size={14} />
-                                      </span>
-                                    ))}
-                                  </span>
-                                )}
-                              </header>
-                              <p>
-                                {"feedback" in item
-                                  ? item.feedback
-                                  : item.description}
-                              </p>
-                              <small>
-                                Shared {formatDate(item.submitted_at)}
-                                {"editing_deadline" in item &&
-                                  ` · Editing closes ${formatDate(item.editing_deadline)}`}
-                              </small>
-                            </article>
+                            <FeedbackCard
+                              key={item.id}
+                              item={item}
+                              own={mine.get(item.id)}
+                              onEdit={setEditingReview}
+                            />
                           ))}
                         </div>
                       </>
@@ -848,6 +972,10 @@ export default function App() {
               onSelect={selectLocation}
               draft={draft}
               onPick={(point) => {
+                if (moving) {
+                  setDraft(point);
+                  return;
+                }
                 setSelected(null);
                 setDraft(point);
               }}
@@ -864,7 +992,36 @@ export default function App() {
                 anywhere to add a place
               </p>
             )}
-            {draft && (
+            {draft && moving && (
+              <div className="draft-card" role="group" aria-label="Move pin">
+                <div>
+                  <strong>
+                    Move {selected?.building_name || "your place"}
+                  </strong>
+                  <span>Drag the pin, or tap the map, then save.</span>
+                </div>
+                <div className="draft-actions">
+                  <button
+                    className="button ghost small"
+                    onClick={() => {
+                      setMoving(false);
+                      setDraft(null);
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    className="button small"
+                    disabled={savingPin}
+                    onClick={() => void savePin()}
+                  >
+                    {savingPin ? "Saving…" : "Save pin"}
+                    <Icon name="check" size={16} />
+                  </button>
+                </div>
+              </div>
+            )}
+            {draft && !moving && (
               <div className="draft-card" role="group" aria-label="New place">
                 <div>
                   <strong>Add a new place here?</strong>
@@ -919,6 +1076,9 @@ export default function App() {
           onClose={() => setDialog(null)}
           onLogout={logout}
           onChanged={() => setVersion((v) => v + 1)}
+          onOpen={(locationId, flatId, kind) =>
+            void openOwn(locationId, flatId, kind)
+          }
         />
       )}
       {dialog === "review" && flat && (
@@ -943,6 +1103,29 @@ export default function App() {
             selectLocation(location);
           }}
           onCreated={placeCreated}
+        />
+      )}
+      {editingReview && (
+        <ReviewForm
+          kind="tenant"
+          review={editingReview}
+          onClose={() => setEditingReview(null)}
+          onSuccess={() => {
+            setEditingReview(null);
+            setVersion((v) => v + 1);
+            setNotice("Your review is updated.");
+          }}
+        />
+      )}
+      {dialog === "edit" && selected && (
+        <EditPlaceForm
+          location={selected}
+          flat={flat}
+          canEditLocation={!!perms?.can_edit_location}
+          canEditFlat={canEditFlat}
+          onClose={() => setDialog(null)}
+          onSaved={placeEdited}
+          onMovePin={startMovingPin}
         />
       )}
       {dialog === "flat" && selected && (
@@ -1036,7 +1219,8 @@ function sortLocations(list: Location[], sort: Sort, center?: Point) {
   return [...list].sort(by[sort]);
 }
 
-type Dialog = "signin" | "account" | "review" | "place" | "flat" | "about";
+type Dialog =
+  "signin" | "account" | "review" | "place" | "flat" | "edit" | "about";
 
 function inBounds(b: Bounds, p: Point) {
   const inLongitude =
@@ -1056,16 +1240,6 @@ function distanceMetres(a: Point, b: Point) {
       Math.cos(b.latitude * rad) *
       Math.sin(dLon / 2) ** 2;
   return 2 * 6371000 * Math.asin(Math.sqrt(h));
-}
-
-function formatDate(value: string) {
-  return new Date(
-    value.length === 10 ? `${value}T00:00:00` : value,
-  ).toLocaleDateString(undefined, {
-    month: "short",
-    year: "numeric",
-    day: "numeric",
-  });
 }
 
 /** National rating summary for the landing page, from server-side totals. */

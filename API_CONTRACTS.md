@@ -54,7 +54,7 @@ Protected endpoints return `401 UNAUTHENTICATED` for missing, expired, or revoke
 | `403` | `FORBIDDEN`, `ACCOUNT_INACTIVE`, `EDIT_WINDOW_CLOSED` |
 | `404` | `NOT_FOUND`, `GOOGLE_SIGN_IN_DISABLED` |
 | `405` | `METHOD_NOT_ALLOWED` (include the route's `Allow` header) |
-| `409` | `INTERACTION_REVIEW_ALREADY_EXISTS`, `LOCATION_ALREADY_EXISTS`, `FLAT_ALREADY_EXISTS`, `TENANCY_PERIOD_CONFLICT`, `FILE_NOT_READY`, `FILE_ALREADY_ATTACHED`, `FILE_UNAVAILABLE`, `REQUEST_ALREADY_PENDING`, `REQUEST_ALREADY_DECIDED` |
+| `409` | `INTERACTION_REVIEW_ALREADY_EXISTS`, `LOCATION_ALREADY_EXISTS`, `FLAT_ALREADY_EXISTS`, `EDIT_LOCKED`, `TENANCY_PERIOD_CONFLICT`, `FILE_NOT_READY`, `FILE_ALREADY_ATTACHED`, `FILE_UNAVAILABLE`, `REQUEST_ALREADY_PENDING`, `REQUEST_ALREADY_DECIDED` |
 | `413` | `FILE_TOO_LARGE` |
 | `415` | `UNSUPPORTED_MEDIA_TYPE` |
 | `422` | `VALIDATION_ERROR`, `PROOF_REQUIRED`, `FILE_PURPOSE_MISMATCH`, `CONFIRMATION_REQUIRED` |
@@ -175,7 +175,17 @@ Request: `{ "address": nonblank_string (≤500), "building_name": nonblank_strin
 
 Locations are stored provider-neutral: WGS84 decimal-degree `latitude`/`longitude` plus the user-entered `address` and `building_name`. No map- or geocoder-specific identifiers, tile coordinates or zoom levels are stored, so the web client can switch map providers (e.g. Leaflet/OpenStreetMap to Google Maps) without a data migration.
 
-`201`: `{ "data": Flat }`; `Location: /api/v1/flats/{flat_id}`. Errors: `409 LOCATION_ALREADY_EXISTS` when an existing location lies within 30 metres of the supplied coordinates (users should review or add a flat to that location instead). Creation is serialized so two concurrent pins at the same spot cannot both succeed. The new location appears with `reviewed_only=false` immediately, and with the default filter once it has a review.
+`201`: `{ "data": Flat }`; `Location: /api/v1/flats/{flat_id}`. Errors: `409 LOCATION_ALREADY_EXISTS` when the pin duplicates an existing location: with a `building_name`, an existing location with the same name (case- and whitespace-insensitive) within 100 metres; without one, any existing location within 30 metres. Differently named buildings may sit next to each other. Users should review or add a flat to the existing location instead. Creation is serialized so two concurrent pins at the same spot cannot both succeed. The new location appears with `reviewed_only=false` immediately, and with the default filter once it has a review.
+
+### Editing what you added — Active user
+
+The user who added a location or flat (recorded as its creator) may correct it until someone else contributes there. Locations and flats seeded by operators, or added before creators were recorded, have no creator and are read-only.
+
+- `GET /locations/{location_id}/permissions` → `{ "data": { "can_edit_location": boolean, "editable_flat_ids": UUID[] } }` for the signed-in user. Clients use it to show or hide edit controls.
+- `PATCH /locations/{location_id}` with any of `{ "address": nonblank_string (≤500), "building_name": nonblank_string (≤200) | null, "latitude": number, "longitude": number }`; `latitude` and `longitude` must be sent together. `200`: `{ "data": MapLocation }`. A rename or move runs the same duplicate rule as creation, excluding the location itself (`409 LOCATION_ALREADY_EXISTS`).
+- `PATCH /flats/{flat_id}` with `{ "label": nonblank_string (≤100) }`. `200`: `{ "data": Flat }`. `409 FLAT_ALREADY_EXISTS` if another flat at the location already uses the label (case-insensitive).
+
+Errors for both: `403 FORBIDDEN` when the caller is not the creator; `409 EDIT_LOCKED` once another user has a visible tenant review or an interaction on the flat (for a location: on any of its flats), or has added a flat to the location. The creator's own reviews never lock their edits.
 
 ### `POST /locations/{location_id}/flats` — Active user
 

@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 from app.database import SessionLocal
 from app.main import app
-from app.models import File, ProofPolicy, TenantReview, User, now
+from app.models import File, Flat, ProofPolicy, TenantReview, User, now
 from tests.conftest import google_token, sign_in
 
 
@@ -329,15 +329,24 @@ def test_new_pin_creates_location_and_flat_for_reviews(client, auth):
 
 
 def test_new_pin_rejects_nearby_duplicates_and_bad_input(client, auth, flat_id):
-    # The flat_id fixture sits at 12.97, 77.64; ~10 m away is the same place.
-    near = client.post(
-        "/api/v1/locations", headers=auth, json=place_payload(latitude=12.97009, longitude=77.64)
-    )
-    assert near.status_code == 409
-    assert near.json()["error"]["code"] == "LOCATION_ALREADY_EXISTS"
-    far = client.post(
-        "/api/v1/locations", headers=auth, json=place_payload(latitude=12.9706, longitude=77.64)
-    )
+    # The flat_id fixture "Test House" sits at 12.97, 77.64.
+    def pin(**changes):
+        return client.post("/api/v1/locations", headers=auth, json=place_payload(**changes))
+
+    # Same name ~10 m or ~80 m away (any case/spacing) is the same building.
+    for lat in (12.97009, 12.97072):
+        same = pin(latitude=lat, longitude=77.64, building_name="  test   HOUSE ")
+        assert same.status_code == 409, same.text
+        assert same.json()["error"]["code"] == "LOCATION_ALREADY_EXISTS"
+    # Unnamed ~10 m away can't be told apart, so it is rejected with a hint.
+    unnamed = pin(latitude=12.97009, longitude=77.64, building_name=None)
+    assert unnamed.status_code == 409
+    assert "add its name" in unnamed.json()["error"]["message"]
+    # A differently named building right next door is allowed.
+    neighbour = pin(latitude=12.97009, longitude=77.64, building_name="Next Door Towers")
+    assert neighbour.status_code == 201, neighbour.text
+    # Same name far away (another branch of a chain, say) is a different place.
+    far = pin(latitude=12.9720, longitude=77.64, building_name="Test House")
     assert far.status_code == 201, far.text
     for bad in (
         {"address": "  "},
@@ -391,3 +400,112 @@ def test_site_stats_aggregate_without_listing_locations(client, auth, flat_id):
     assert {b["stars"]: b["count"] for b in data["rating_bands"]} == {5: 1, 4: 0, 3: 0, 2: 0, 1: 0}
     assert [t["building_name"] for t in data["top_rated"]] == ["Test House"]
     assert data["top_rated"][0]["summary"]["tenant_review_count"] == 2
+
+
+def test_creator_can_edit_place_and_flat_until_others_contribute(client, auth):
+    flat = client.post("/api/v1/locations", headers=auth, json=place_payload()).json()["data"]
+    location_id, flat_id = flat["location"]["id"], flat["id"]
+    perms = client.get(f"/api/v1/locations/{location_id}/permissions", headers=auth).json()
+    assert perms["data"] == {"can_edit_location": True, "editable_flat_ids": [flat_id]}
+
+    edited = client.patch(
+        f"/api/v1/locations/{location_id}",
+        headers=auth,
+        json={"building_name": "Renamed House", "address": "14 Fixed Road", "latitude": 12.9001,
+              "longitude": 77.5001},
+    )
+    assert edited.status_code == 200, edited.text
+    assert edited.json()["data"]["building_name"] == "Renamed House"
+    assert edited.json()["data"]["latitude"] == 12.9001
+    # Clearing the optional name is allowed; latitude alone or a null address is not.
+    assert client.patch(f"/api/v1/locations/{location_id}", headers=auth,
+                        json={"building_name": None}).status_code == 200
+    for bad in ({"latitude": 12.91}, {"address": None}, {}, {"created_by": "x"}):
+        assert client.patch(f"/api/v1/locations/{location_id}", headers=auth,
+                            json=bad).status_code == 422, bad
+    relabel = client.patch(f"/api/v1/flats/{flat_id}", headers=auth, json={"label": "3C"})
+    assert relabel.status_code == 200 and relabel.json()["data"]["label"] == "3C"
+    # The creator's own review does not lock anything.
+    create_review(client, flat_id, auth)
+    assert client.patch(f"/api/v1/flats/{flat_id}", headers=auth,
+                        json={"label": "3D"}).status_code == 200
+
+    other, _ = sign_in(client, "neighbour")
+    # Someone else can't edit it ...
+    response = client.patch(f"/api/v1/locations/{location_id}", headers=other,
+                            json={"address": "Hijacked"})
+    assert response.status_code == 403
+    assert client.patch(f"/api/v1/flats/{flat_id}", headers=other,
+                        json={"label": "X"}).status_code == 403
+    assert client.get(f"/api/v1/locations/{location_id}/permissions",
+                      headers=other).json()["data"] == {
+        "can_edit_location": False, "editable_flat_ids": []}
+    # ... and once they contribute, the creator can't either.
+    client.post(f"/api/v1/flats/{flat_id}/interactions", headers=other,
+                json=interaction_payload())
+    locked = client.patch(f"/api/v1/locations/{location_id}", headers=auth,
+                          json={"address": "Changed later"})
+    assert locked.status_code == 409 and locked.json()["error"]["code"] == "EDIT_LOCKED"
+    assert client.patch(f"/api/v1/flats/{flat_id}", headers=auth,
+                        json={"label": "9Z"}).status_code == 409
+
+
+def test_place_edit_keeps_duplicate_and_flat_rules(client, auth, flat_id):
+    flat = client.post("/api/v1/locations", headers=auth, json=place_payload()).json()["data"]
+    location_id = flat["location"]["id"]
+    # Moving onto "Test House" (fixture at 12.97, 77.64) under its name is a duplicate.
+    clash = client.patch(f"/api/v1/locations/{location_id}", headers=auth,
+                         json={"building_name": "Test House", "latitude": 12.97009,
+                               "longitude": 77.64})
+    assert clash.status_code == 409
+    assert clash.json()["error"]["code"] == "LOCATION_ALREADY_EXISTS"
+    second = client.post(f"/api/v1/locations/{location_id}/flats", headers=auth,
+                         json={"label": "4A"}).json()["data"]
+    taken = client.patch(f"/api/v1/flats/{second['id']}", headers=auth, json={"label": "2b"})
+    assert taken.status_code == 409 and taken.json()["error"]["code"] == "FLAT_ALREADY_EXISTS"
+    # Seeded/older places have no recorded creator and stay read-only.
+    with SessionLocal() as db:
+        seeded = str(db.get(Flat, uuid.UUID(flat_id)).location_id)
+    assert client.patch(f"/api/v1/locations/{seeded}", headers=auth,
+                        json={"address": "Mine now"}).status_code == 403
+
+
+def test_own_reviews_can_be_filtered_to_one_flat(client, auth, flat_id):
+    review = create_review(client, flat_id, auth)
+    other_flat = client.post("/api/v1/locations", headers=auth, json=place_payload()).json()
+    create_review(client, other_flat["data"]["id"], auth)
+    mine = client.get(f"/api/v1/me/tenant-reviews?flat_id={flat_id}", headers=auth).json()
+    assert [r["id"] for r in mine["data"]] == [review["id"]]
+    assert mine["data"][0]["can_edit"] is True
+    assert len(client.get("/api/v1/me/tenant-reviews", headers=auth).json()["data"]) == 2
+    # Another user's view of the same flat lists nothing as theirs.
+    other, _ = sign_in(client, "neighbour")
+    assert client.get(f"/api/v1/me/tenant-reviews?flat_id={flat_id}",
+                      headers=other).json()["data"] == []
+
+
+def test_notebook_lists_what_the_user_added_and_where_their_reviews_are(client, auth, flat_id):
+    mine = client.post("/api/v1/locations", headers=auth, json=place_payload()).json()["data"]
+    with SessionLocal() as db:
+        seeded_location = str(db.get(Flat, uuid.UUID(flat_id)).location_id)
+    extra = client.post(f"/api/v1/locations/{seeded_location}/flats", headers=auth,
+                        json={"label": "9F"}).json()["data"]
+    added = client.get("/api/v1/me/flats", headers=auth).json()["data"]
+    by_id = {f["id"]: f for f in added}
+    assert set(by_id) == {mine["id"], extra["id"]}
+    assert by_id[mine["id"]]["added_place"] is True
+    assert by_id[mine["id"]]["location"]["building_name"] == "Fresh Pin House"
+    assert by_id[extra["id"]]["added_place"] is False and by_id[extra["id"]]["can_edit"] is True
+    other, _ = sign_in(client, "neighbour")
+    assert client.get("/api/v1/me/flats", headers=other).json()["data"] == []
+
+    review = create_review(client, mine["id"], auth)
+    own = client.get("/api/v1/me/tenant-reviews", headers=auth).json()["data"][0]
+    assert own["place"]["building_name"] == "Fresh Pin House"
+    assert own["place"]["flat_label"] == "2B"
+    client.post(f"/api/v1/flats/{mine['id']}/interactions", headers=auth,
+                json=interaction_payload())
+    own_interaction = client.get("/api/v1/me/interactions", headers=auth).json()["data"][0]
+    assert own_interaction["place"]["address"] == "12 New Road, Bengaluru"
+    # Public review shapes stay as they were.
+    assert "place" not in client.get(f"/api/v1/tenant-reviews/{review['id']}").json()["data"]

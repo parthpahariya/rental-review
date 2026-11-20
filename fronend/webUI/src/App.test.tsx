@@ -79,6 +79,8 @@ function result(data: unknown, list = true) {
 }
 
 beforeEach(() => {
+  // Every test starts at the home page with a clean address bar.
+  window.history.replaceState(null, "", "/");
   setToken(null);
   Element.prototype.scrollIntoView = vi.fn();
   vi.stubGlobal(
@@ -88,6 +90,8 @@ beforeEach(() => {
         return Promise.resolve(result(stats, false));
       if (input.includes("/auth/providers"))
         return Promise.resolve(result({ google_client_id: null }, false));
+      if (input.endsWith("/locations/location-1"))
+        return Promise.resolve(result(location, false));
       if (input.includes("/locations/location-1/flats"))
         return Promise.resolve(result([flat]));
       if (input.includes("/locations"))
@@ -104,6 +108,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   mapView.current = null;
+  window.history.replaceState(null, "", "/");
   cleanup();
   vi.unstubAllGlobals();
 });
@@ -131,7 +136,7 @@ describe("Rental Review", () => {
       "true",
     );
     expect(screen.getByText("A transparent viewing.")).toBeInTheDocument();
-    expect(screen.getByText("Owner: A different owner")).toBeInTheDocument();
+    expect(screen.getByText("A different owner")).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: /Select a flat/ })).toHaveValue(
       "flat-1",
     );
@@ -356,6 +361,13 @@ describe("Rental Review", () => {
           );
         if (init?.method === "POST" && input.endsWith("/locations"))
           return Promise.resolve(result(newFlat, false));
+        if (input.includes("/locations/location-2/permissions"))
+          return Promise.resolve(
+            result(
+              { can_edit_location: true, editable_flat_ids: ["flat-2"] },
+              false,
+            ),
+          );
         if (input.includes("/locations/location-2/flats"))
           return Promise.resolve(result([newFlat]));
         if (input.includes("/flats/flat-2/"))
@@ -394,6 +406,236 @@ describe("Rental Review", () => {
     });
   });
 
+  it("lets the person who added a place edit it", async () => {
+    const mine = { ...location, id: "location-9", building_name: "Typo Hsue" };
+    const myFlat = { ...flat, id: "flat-9", label: "2O2", location: mine };
+    const base = fetch as unknown as (input: string) => Promise<Response>;
+    const calls: { url: string; method?: string; body?: unknown }[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: string, init?: RequestInit) => {
+        calls.push({
+          url: input,
+          method: init?.method,
+          body: init?.body ? JSON.parse(String(init.body)) : undefined,
+        });
+        if (input.endsWith("/me"))
+          return Promise.resolve(
+            result({ id: "me", email: "me@example.com", role: "user" }, false),
+          );
+        if (input.includes("/locations/location-9/permissions"))
+          return Promise.resolve(
+            result(
+              { can_edit_location: true, editable_flat_ids: ["flat-9"] },
+              false,
+            ),
+          );
+        if (init?.method === "PATCH" && input.endsWith("/locations/location-9"))
+          return Promise.resolve(
+            result({ ...mine, building_name: "Tidy House" }, false),
+          );
+        if (init?.method === "PATCH" && input.endsWith("/flats/flat-9"))
+          return Promise.resolve(result({ ...myFlat, label: "202" }, false));
+        if (input.includes("/locations/location-9/flats"))
+          return Promise.resolve(result([myFlat]));
+        if (input.includes("/flats/flat-9/")) return Promise.resolve(result([]));
+        if (input.includes("/locations?"))
+          return Promise.resolve(result([mine]));
+        return base(input);
+      }),
+    );
+    setToken("test-session");
+    const user = userEvent.setup();
+    render(<App />);
+    await browse(user);
+    await user.click(await screen.findByRole("button", { name: /Typo Hsue/ }));
+    await user.click(
+      await screen.findByRole("button", { name: /Edit what you added/ }),
+    );
+    const name = screen.getByLabelText(/Building name/);
+    await user.clear(name);
+    await user.type(name, "Tidy House");
+    const label = screen.getByLabelText(/^Flat/);
+    await user.clear(label);
+    await user.type(label, "202");
+    await user.click(screen.getByRole("button", { name: /Save changes/ }));
+    expect(
+      await screen.findByRole("heading", { name: "Tidy House" }),
+    ).toBeInTheDocument();
+    const edits = calls.filter((c) => c.method === "PATCH");
+    // Only what changed is sent.
+    expect(edits.map((c) => [c.url, c.body])).toEqual([
+      ["/api/v1/locations/location-9", { building_name: "Tidy House" }],
+      ["/api/v1/flats/flat-9", { label: "202" }],
+    ]);
+  });
+
+  it("offers Edit on the signed-in user's own reviews only", async () => {
+    const base = fetch as unknown as (
+      input: string,
+      init?: RequestInit,
+    ) => Promise<Response>;
+    const calls: { url: string; method?: string; body?: unknown }[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: string, init?: RequestInit) => {
+        calls.push({
+          url: input,
+          method: init?.method,
+          body: init?.body ? JSON.parse(String(init.body)) : undefined,
+        });
+        if (input.endsWith("/me"))
+          return Promise.resolve(
+            result({ id: "me", email: "me@example.com", role: "user" }, false),
+          );
+        if (input.includes("/permissions"))
+          return Promise.resolve(
+            result({ can_edit_location: false, editable_flat_ids: [] }, false),
+          );
+        if (input.includes("/me/tenant-reviews?flat_id=flat-1"))
+          return Promise.resolve(result([{ ...review, can_edit: true }]));
+        if (init?.method === "PATCH")
+          return Promise.resolve(result({ ...review, rating: 2 }, false));
+        return base(input, init);
+      }),
+    );
+    setToken("test-session");
+    const user = userEvent.setup();
+    render(<App />);
+    await browse(user);
+    await user.click(
+      await screen.findByRole("button", { name: /Parkside Residences/ }),
+    );
+    expect(await screen.findByText(/Your review/)).toBeInTheDocument();
+    await user.click(
+      await screen.findByRole("button", { name: /Edit your review/ }),
+    );
+    expect(
+      await screen.findByRole("heading", { name: /Edit/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("notebook shows where each review is and opens it on the map", async () => {
+    const place = {
+      building_name: "Parkside Residences",
+      address: location.address,
+      flat_label: flat.label,
+    };
+    const base = fetch as unknown as (
+      input: string,
+      init?: RequestInit,
+    ) => Promise<Response>;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: string, init?: RequestInit) => {
+        if (input.endsWith("/me"))
+          return Promise.resolve(
+            result({ id: "me", email: "me@example.com", role: "user" }, false),
+          );
+        if (input.includes("/me/tenant-reviews"))
+          return Promise.resolve(
+            result([
+              { ...review, location_id: "location-1", place, can_edit: true },
+            ]),
+          );
+        if (input.includes("/me/flats"))
+          return Promise.resolve(
+            result([{ ...flat, added_place: true, can_edit: true }]),
+          );
+        if (input.includes("/me/interactions") || input.includes("/me/deletion"))
+          return Promise.resolve(result([]));
+        if (input.includes("/permissions"))
+          return Promise.resolve(
+            result({ can_edit_location: false, editable_flat_ids: [] }, false),
+          );
+        return base(input, init);
+      }),
+    );
+    setToken("test-session");
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(
+      await screen.findByRole("button", { name: "Your account" }),
+    );
+    expect(await screen.findByText("Places you added")).toBeInTheDocument();
+    expect(screen.getByText("You added this building")).toBeInTheDocument();
+    const links = await screen.findAllByRole("button", {
+      name: /Parkside Residences · Flat A-204/,
+    });
+    // One under "Places you added", one on the review.
+    expect(links).toHaveLength(2);
+    await user.click(links[1]);
+    expect(
+      await screen.findByRole("heading", { name: "Parkside Residences" }),
+    ).toBeInTheDocument();
+    expect(await screen.findByText("A helpful owner.")).toBeInTheDocument();
+    expect(screen.queryByText("Your rental notebook")).not.toBeInTheDocument();
+  });
+
+  it("shows no edit button on places added by someone else", async () => {
+    const base = fetch as unknown as (input: string) => Promise<Response>;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: string) => {
+        if (input.endsWith("/me"))
+          return Promise.resolve(
+            result({ id: "me", email: "me@example.com", role: "user" }, false),
+          );
+        if (input.includes("/permissions"))
+          return Promise.resolve(
+            result({ can_edit_location: false, editable_flat_ids: [] }, false),
+          );
+        return base(input);
+      }),
+    );
+    setToken("test-session");
+    const user = userEvent.setup();
+    render(<App />);
+    await browse(user);
+    await user.click(
+      await screen.findByRole("button", { name: /Parkside Residences/ }),
+    );
+    expect(await screen.findByText("A helpful owner.")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Edit what you added/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps the map spot and open place in the address bar across a refresh", async () => {
+    const user = userEvent.setup();
+    const first = render(<App />);
+    await browse(user);
+    await user.click(
+      await screen.findByRole("button", { name: /Parkside Residences/ }),
+    );
+    expect(await screen.findByText("A helpful owner.")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(window.location.search).toContain("place=location-1"),
+    );
+    const saved = new URLSearchParams(window.location.search);
+    expect(saved.get("at")).toMatch(/^-?\d+\.\d{5},-?\d+\.\d{5},\d+$/);
+    expect(saved.get("flat")).toBe("flat-1");
+    first.unmount();
+
+    // A fresh load of the same URL opens the map, the place and its flat.
+    render(<App />);
+    expect(
+      await screen.findByRole("heading", { name: "Parkside Residences" }),
+    ).toBeInTheDocument();
+    expect(await screen.findByText("A helpful owner.")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: /Rent with your eyes open/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("ignores a malformed address bar and shows the home page", async () => {
+    window.history.replaceState(null, "", "/?at=999,abc,5&place=../../x");
+    render(<App />);
+    expect(
+      await screen.findByRole("button", { name: /Browse places on the map/ }),
+    ).toBeInTheDocument();
+  });
+
   it("lists only the places inside the visible map area", async () => {
     mapView.current = {
       center: { latitude: 20, longitude: 80 },
@@ -409,6 +651,8 @@ describe("Rental Review", () => {
       screen.queryByRole("button", { name: /Parkside Residences/ }),
     ).not.toBeInTheDocument();
     cleanup();
+    // A fresh visit, not a refresh: start from the home page again.
+    window.history.replaceState(null, "", "/");
     mapView.current = {
       center: { latitude: 12, longitude: 77 },
       bounds: { west: 76.9, south: 11.9, east: 77.1, north: 12.1 },

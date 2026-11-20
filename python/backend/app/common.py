@@ -84,11 +84,27 @@ def account_data(user):
     ) | {"google_linked": user.google_subject is not None}
 
 
+def place_of(db, flat_id):
+    """Where a review is, for its author's own lists (public shapes only carry ids)."""
+    from .models import Flat, Location
+
+    flat = db.get(Flat, flat_id)
+    location = db.get(Location, flat.location_id)
+    return {
+        "building_name": location.building_name,
+        "address": location.address,
+        "flat_label": flat.label,
+        "latitude": location.latitude,
+        "longitude": location.longitude,
+    }
+
+
 def own_review_data(db, review):
     from .models import DeletionRequest
 
     result = review_data(db, review)
     result.update(
+        place=place_of(db, review.flat_id),
         deleted_at=review.deleted_at,
         can_edit=review.deleted_at is None and now() < review.submitted_at + timedelta(days=30),
         can_request_deletion=review.deleted_at is None

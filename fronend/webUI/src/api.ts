@@ -17,9 +17,17 @@ export type Flat = {
   location: Location;
   summary: Summary;
 };
+/** Where a review is; only on the author's own records. */
+export type Place = {
+  building_name: string | null;
+  address: string;
+  flat_label: string;
+};
 export type Review = {
   id: string;
   flat_id: string;
+  location_id?: string;
+  place?: Place;
   owner_name: string;
   rating: number;
   feedback: string;
@@ -34,6 +42,8 @@ export type Review = {
 export type Interaction = {
   id: string;
   flat_id: string;
+  location_id?: string;
+  place?: Place;
   owner_name: string;
   description: string;
   interaction_date: string;
@@ -129,6 +139,15 @@ export async function api<T>(
 
 export const post = <T>(path: string, body: unknown) =>
   api<T>(path, { method: "POST", body: JSON.stringify(body) });
+export const patch = <T>(path: string, body: unknown) =>
+  api<T>(path, { method: "PATCH", body: JSON.stringify(body) });
+/** A flat the signed-in user added, from `/me/flats`. */
+export type OwnFlat = Flat & { added_place: boolean; can_edit: boolean };
+/** What the signed-in user may change at a place they added. */
+export type Permissions = {
+  can_edit_location: boolean;
+  editable_flat_ids: string[];
+};
 export const message = (error: unknown) =>
   error instanceof Error
     ? error.message

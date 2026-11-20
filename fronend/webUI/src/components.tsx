@@ -5,6 +5,7 @@ import {
   allPages,
   downloadFile,
   message,
+  patch,
   post,
   setToken,
   upload,
@@ -16,6 +17,8 @@ import type {
   Flat,
   Interaction,
   Location,
+  OwnFlat,
+  Place,
   Review,
 } from "./api";
 import type { Point } from "./Map";
@@ -66,6 +69,12 @@ export function Icon({ name, size = 20 }: { name: string; size?: number }) {
       </>
     ),
     back: <path d="M15 5l-7 7 7 7" />,
+    edit: (
+      <>
+        <path d="M4 20h4L19 9l-4-4L4 16Z" />
+        <path d="m14 6 4 4" />
+      </>
+    ),
     chevron: <path d="m9 5 7 7-7 7" />,
     plus: <path d="M12 5v14M5 12h14" />,
     check: <path d="m5 12.5 4.5 4.5L19 7.5" />,
@@ -135,6 +144,107 @@ export function Modal({
       </div>
       {children}
     </dialog>
+  );
+}
+
+const shortDate = (value: string) =>
+  new Date(value.length === 10 ? `${value}T00:00:00` : value).toLocaleDateString(
+    undefined,
+    { day: "numeric", month: "short", year: "numeric" },
+  );
+
+/**
+ * One tenant review or interaction on a flat's page:
+ *
+ *   (L)  OWNER                                    [Edit]
+ *        Lakshmi Rao
+ *   ★★★★★ 5.0   ( Tenancy  Feb 12, 2024 – Mar 11, 2025 )
+ *   Feedback text…
+ *   ─────────────────────────────────────────────────────
+ *   Shared Nov 20, 2026     Your review · editable until Dec 20, 2026
+ */
+export function FeedbackCard({
+  item,
+  own,
+  onEdit,
+}: {
+  item: Review | Interaction;
+  /** The viewer's own copy of this review, when they wrote it. */
+  own?: Review;
+  onEdit: (review: Review) => void;
+}) {
+  const isReview = "rating" in item;
+  return (
+    <article className={`review-card ${own ? "is-own" : ""}`}>
+      <header className="review-card-head">
+        <span className="avatar" aria-hidden="true">
+          {item.owner_name.trim().charAt(0).toUpperCase()}
+        </span>
+        <span className="review-who">
+          <span className="review-label">Owner</span>
+          <strong>{item.owner_name}</strong>
+        </span>
+        {own?.can_edit && (
+          <button
+            className="edit-review"
+            onClick={() => onEdit(own)}
+            aria-label={`Edit your review of ${item.owner_name}`}
+          >
+            <Icon name="edit" size={14} /> Edit
+          </button>
+        )}
+      </header>
+      <div className="review-meta">
+        {isReview && (
+          <span
+            className="review-rating"
+            role="img"
+            aria-label={`${item.rating} out of 5 stars`}
+          >
+            <span className="stars" aria-hidden="true">
+              {[1, 2, 3, 4, 5].map((n) => (
+                <span key={n} className={n <= item.rating ? "on" : ""}>
+                  <Icon name="star" size={14} />
+                </span>
+              ))}
+            </span>
+            <b aria-hidden="true">{item.rating}.0</b>
+          </span>
+        )}
+        <span className="review-chip">
+          {isReview ? (
+            <>
+              <span className="review-chip-label">Tenancy</span>
+              <span className="nowrap">{shortDate(item.tenancy_start_date)}</span>
+              {" – "}
+              <span className="nowrap">{shortDate(item.tenancy_end_date)}</span>
+            </>
+          ) : (
+            <>
+              <span className="review-chip-label">Interaction</span>
+              <span className="nowrap">{shortDate(item.interaction_date)}</span>
+            </>
+          )}
+        </span>
+      </div>
+      <p className="review-body">
+        {"feedback" in item ? item.feedback : item.description}
+      </p>
+      <footer className="review-card-foot">
+        <span className="nowrap">Shared {shortDate(item.submitted_at)}</span>
+        {own && (
+          <span className="yours">
+            Your review
+            {own.can_edit && (
+              <span className="nowrap">
+                {" "}
+                · editable until {shortDate(own.editing_deadline)}
+              </span>
+            )}
+          </span>
+        )}
+      </footer>
+    </article>
   );
 }
 
@@ -424,18 +534,48 @@ export function ReviewForm({
   );
 }
 
+/** "Lakeview Residency · Flat 3B", opening that place on the map when clicked. */
+function PlaceLink({
+  place,
+  onOpen,
+}: {
+  place: Place;
+  onOpen: () => void;
+}) {
+  return (
+    <button className="place-link" onClick={onOpen}>
+      <Icon name="pin" size={15} />
+      <span>
+        <strong>
+          {place.building_name || "Rental property"} · Flat {place.flat_label}
+        </strong>
+        <small>{place.address}</small>
+      </span>
+      <Icon name="chevron" size={16} />
+    </button>
+  );
+}
+
 export function AccountPanel({
   account,
   onClose,
   onLogout,
   onChanged,
+  onOpen,
 }: {
   account: Account;
   onClose: () => void;
   onLogout: () => void;
   onChanged: () => void;
+  /** Shows a place on the map with the given flat (and tab) selected. */
+  onOpen: (
+    locationId: string,
+    flatId: string,
+    tab: "tenant" | "interaction",
+  ) => void;
 }) {
   const [reviews, setReviews] = useState<Review[]>([]);
+  const [added, setAdded] = useState<OwnFlat[]>([]);
   const [interactions, setInteractions] = useState<Interaction[]>([]);
   const [requests, setRequests] = useState<Deletion[]>([]);
   const [adminRequests, setAdminRequests] = useState<Deletion[]>([]);
@@ -450,14 +590,16 @@ export function AccountPanel({
   async function refresh() {
     setError("");
     try {
-      const [own, ints, reqs, admin] = await Promise.all([
+      const [own, ints, reqs, admin, flats] = await Promise.all([
         allPages<Review>("/me/tenant-reviews"),
         allPages<Interaction>("/me/interactions"),
         allPages<Deletion>("/me/deletion-requests"),
         account.role === "admin"
           ? allPages<Deletion>("/admin/deletion-requests")
           : Promise.resolve([]),
+        allPages<OwnFlat>("/me/flats"),
       ]);
+      setAdded(flats);
       setReviews(own);
       setInteractions(ints);
       setRequests(reqs);
@@ -562,12 +704,45 @@ export function AccountPanel({
         </form>
       ) : (
         <>
+          {added.length > 0 && (
+            <>
+              <h3>Places you added</h3>
+              {groupByLocation(added).map(([location, flats]) => (
+                <article key={location.id} className="account-record">
+                  <span className="badge">
+                    {flats.some((f) => f.added_place)
+                      ? "You added this building"
+                      : "You added a flat here"}
+                  </span>
+                  {flats.map((f) => (
+                    <PlaceLink
+                      key={f.id}
+                      place={{
+                        building_name: location.building_name,
+                        address: location.address,
+                        flat_label: f.label,
+                      }}
+                      onOpen={() => onOpen(location.id, f.id, "tenant")}
+                    />
+                  ))}
+                </article>
+              ))}
+            </>
+          )}
           <h3>Your tenant reviews</h3>
           {loaded && !reviews.length && (
             <p className="muted">Your rental experiences will appear here.</p>
           )}
           {reviews.map((review) => (
             <article key={review.id} className="account-record">
+              {review.place && review.location_id && (
+                <PlaceLink
+                  place={review.place}
+                  onOpen={() =>
+                    onOpen(review.location_id!, review.flat_id, "tenant")
+                  }
+                />
+              )}
               <strong>
                 {review.owner_name} · {"★".repeat(review.rating)}
               </strong>
@@ -603,6 +778,18 @@ export function AccountPanel({
           )}
           {interactions.map((interaction) => (
             <article key={interaction.id} className="account-record">
+              {interaction.place && interaction.location_id && (
+                <PlaceLink
+                  place={interaction.place}
+                  onOpen={() =>
+                    onOpen(
+                      interaction.location_id!,
+                      interaction.flat_id,
+                      "interaction",
+                    )
+                  }
+                />
+              )}
               <strong>{interaction.owner_name}</strong>
               <p>{interaction.description}</p>
               <button
@@ -828,13 +1015,21 @@ export function AddPlaceForm({
       )}
       <form className="form-stack" onSubmit={submit}>
         <label>
-          Building name (optional)
+          Building name{nearby.length > 0 ? "" : " (optional)"}
           <input
             name="building_name"
             maxLength={200}
             placeholder="e.g. Lakeview Residency"
+            required={nearby.length > 0}
+            aria-describedby={nearby.length > 0 ? "building-name-hint" : undefined}
           />
         </label>
+        {nearby.length > 0 && (
+          <p className="muted fine-print" id="building-name-hint">
+            Not one of the places above? Give your building its name so it can be
+            added next to them.
+          </p>
+        )}
         <label>
           Address
           <input
@@ -859,6 +1054,123 @@ export function AddPlaceForm({
           {busy ? "Adding…" : "Add place and write a review"}
           <Icon name="arrow" size={18} />
         </button>
+      </form>
+    </Modal>
+  );
+}
+
+/** Lets the person who added a place fix its details and their flat's number. */
+function groupByLocation(flats: OwnFlat[]): [Location, OwnFlat[]][] {
+  const groups = new Map<string, [Location, OwnFlat[]]>();
+  for (const f of flats) {
+    const group = groups.get(f.location.id) ?? [f.location, []];
+    group[1].push(f);
+    groups.set(f.location.id, group);
+  }
+  return [...groups.values()];
+}
+
+export function EditPlaceForm({
+  location,
+  flat,
+  canEditLocation,
+  canEditFlat,
+  onClose,
+  onSaved,
+  onMovePin,
+}: {
+  location: Location;
+  flat: Flat | null;
+  canEditLocation: boolean;
+  canEditFlat: boolean;
+  onClose: () => void;
+  onSaved: (location: Location | null, flat: Flat | null) => void;
+  onMovePin: () => void;
+}) {
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  async function submit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setError("");
+    setBusy(true);
+    const form = new FormData(e.currentTarget);
+    try {
+      let savedLocation: Location | null = null;
+      let savedFlat: Flat | null = null;
+      if (canEditLocation) {
+        const name = String(form.get("building_name") || "").trim() || null;
+        const address = String(form.get("address") || "").trim();
+        const changes: Record<string, string | null> = {};
+        if (name !== (location.building_name || null)) changes.building_name = name;
+        if (address !== location.address) changes.address = address;
+        if (Object.keys(changes).length)
+          savedLocation = (
+            await patch<{ data: Location }>(`/locations/${location.id}`, changes)
+          ).data;
+      }
+      if (canEditFlat && flat) {
+        const label = String(form.get("flat_label") || "").trim();
+        if (label !== flat.label)
+          savedFlat = (
+            await patch<{ data: Flat }>(`/flats/${flat.id}`, { label })
+          ).data;
+      }
+      onSaved(savedLocation, savedFlat);
+    } catch (err) {
+      setError(message(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <Modal title="Edit your place" onClose={onClose}>
+      <p className="muted">
+        You can change what you added until someone else reviews it.
+      </p>
+      <form className="form-stack" onSubmit={submit}>
+        {canEditLocation && (
+          <>
+            <label>
+              Building name (optional)
+              <input
+                name="building_name"
+                maxLength={200}
+                defaultValue={location.building_name || ""}
+                placeholder="e.g. Lakeview Residency"
+              />
+            </label>
+            <label>
+              Address
+              <input
+                name="address"
+                required
+                maxLength={500}
+                defaultValue={location.address}
+              />
+            </label>
+          </>
+        )}
+        {canEditFlat && flat && (
+          <label>
+            Flat
+            <input
+              name="flat_label"
+              required
+              maxLength={100}
+              defaultValue={flat.label}
+            />
+          </label>
+        )}
+        <ErrorNotice error={error} />
+        <button className="button" disabled={busy}>
+          {busy ? "Saving…" : "Save changes"}
+          <Icon name="check" size={18} />
+        </button>
+        {canEditLocation && (
+          <button type="button" className="text-button" onClick={onMovePin}>
+            <Icon name="pin" size={16} /> Move the pin on the map
+          </button>
+        )}
       </form>
     </Modal>
   );
