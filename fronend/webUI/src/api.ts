@@ -39,6 +39,15 @@ export type Interaction = {
   interaction_date: string;
   submitted_at: string;
 };
+export type Stats = {
+  location_count: number;
+  rated_location_count: number;
+  tenant_review_count: number;
+  interaction_review_count: number;
+  average_rating: number | null;
+  rating_bands: { stars: number; count: number }[];
+  top_rated: Location[];
+};
 export type Account = {
   id: string;
   mobile_number: string;
@@ -125,16 +134,31 @@ export const message = (error: unknown) =>
     : "Something went wrong. Please try again.";
 
 export async function allPages<T>(path: string): Promise<T[]> {
+  return (await somePages<T>(path, Infinity)).rows;
+}
+
+/**
+ * Follows `next_cursor` for at most `maxPages` pages. `more` is true when the
+ * server still had rows left, e.g. a zoomed-out map over a dense city.
+ */
+export async function somePages<T>(
+  path: string,
+  maxPages: number,
+  signal?: AbortSignal,
+): Promise<{ rows: T[]; more: boolean }> {
   const results: T[] = [];
   let cursor: string | null = null;
+  let pages = 0;
   do {
     const result: List<T> = await api(
       `${path}${path.includes("?") ? "&" : "?"}limit=100${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`,
+      signal ? { signal } : {},
     );
     results.push(...result.data);
     cursor = result.page.next_cursor;
-  } while (cursor);
-  return results;
+    pages += 1;
+  } while (cursor && pages < maxPages);
+  return { rows: results, more: !!cursor };
 }
 
 export async function upload(file: File, purpose: string) {

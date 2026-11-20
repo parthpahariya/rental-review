@@ -13,11 +13,24 @@ import PropertyMap from "./Map";
 import LocalitySearch, { DEFAULT_CENTER } from "./LocalitySearch";
 import type { Area } from "./LocalitySearch";
 import type { Bounds, Focus, MapView, Point } from "./Map";
-import { api, allPages, hasToken, message, setToken } from "./api";
-import type { Account, Flat, Interaction, Location, Review } from "./api";
+import { api, allPages, hasToken, message, setToken, somePages } from "./api";
+import type {
+  Account,
+  Flat,
+  Interaction,
+  Location,
+  Review,
+  Stats,
+} from "./api";
+import { formatAtLeast, formatCount, plural } from "./format";
 
 export default function App() {
+  // Only the places inside the visible map area: the full catalogue is far
+  // too large (crores of buildings) to download.
   const [locations, setLocations] = useState<Location[]>([]);
+  const [more, setMore] = useState(false);
+  const [stats, setStats] = useState<Stats | null>(null);
+  const [statsError, setStatsError] = useState(false);
   // The map stays hidden until the visitor picks a locality to look at.
   const [area, setArea] = useState<Area | null>(null);
   const [focus, setFocus] = useState<Focus | null>(null);
@@ -31,7 +44,7 @@ export default function App() {
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const [draft, setDraft] = useState<Point | null>(null);
   const [view, setView] = useState<MapView | null>(null);
-  const [fitAll, setFitAll] = useState(0);
+  const [zoomOut, setZoomOut] = useState(0);
   const [hovered, setHovered] = useState<string | null>(null);
   const [sort, setSort] = useState<Sort>("nearest");
   const [shown, setShown] = useState(PAGE_SIZE);
@@ -46,7 +59,7 @@ export default function App() {
   // Flat to open after a reload, and the dialog to resume after signing in.
   const wantFlat = useRef<string | null>(null);
   const afterSignIn = useRef<Dialog | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
   const [error, setError] = useState("");
   const [detailError, setDetailError] = useState("");
@@ -71,22 +84,53 @@ export default function App() {
   }, []);
   useEffect(() => {
     let live = true;
-    setLoading(true);
-    setError("");
-    allPages<Location>("/locations?reviewed_only=false")
-      .then((rows) => {
-        if (live) setLocations(rows);
+    setStatsError(false);
+    api<{ data: Stats }>("/stats")
+      .then((r) => {
+        if (live) setStats(r.data);
       })
-      .catch((e) => {
-        if (live) setError(message(e));
-      })
-      .finally(() => {
-        if (live) setLoading(false);
+      .catch(() => {
+        if (live) setStatsError(true);
       });
     return () => {
       live = false;
     };
   }, [version]);
+  // Until the map reports its view, use the area the visitor picked.
+  const queryBounds = view?.bounds ?? (area ? areaBounds(area) : null);
+  const bbox = queryBounds
+    ? [queryBounds.west, queryBounds.south, queryBounds.east, queryBounds.north]
+        .map((n) => n.toFixed(5))
+        .join(",")
+    : null;
+  useEffect(() => {
+    if (!bbox) return;
+    const controller = new AbortController();
+    setLoading(true);
+    setError("");
+    // Wait for panning to settle so a drag doesn't fire a request per frame.
+    const timer = setTimeout(() => {
+      somePages<Location>(
+        `/locations?reviewed_only=false&bbox=${bbox}`,
+        MAX_PAGES,
+        controller.signal,
+      )
+        .then(({ rows, more }) => {
+          setLocations(rows);
+          setMore(more);
+        })
+        .catch((e) => {
+          if (e.name !== "AbortError") setError(message(e));
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setLoading(false);
+        });
+    }, 250);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [bbox, version]);
   useEffect(() => {
     if (!selected) return;
     let live = true;
@@ -172,17 +216,10 @@ export default function App() {
   }
   function browseAll() {
     openArea({
-      name: "All places",
+      name: DEFAULT_CENTER.name,
+      detail: "Move the map to explore anywhere in India",
       center: DEFAULT_CENTER.center,
-      zoom: 12,
-      bounds: locations.length
-        ? {
-            west: Math.min(...locations.map((l) => l.longitude)),
-            east: Math.max(...locations.map((l) => l.longitude)),
-            south: Math.min(...locations.map((l) => l.latitude)),
-            north: Math.max(...locations.map((l) => l.latitude)),
-          }
-        : undefined,
+      zoom: 13,
     });
   }
   function changeArea() {
@@ -231,7 +268,11 @@ export default function App() {
   const visible = view
     ? locations.filter((l) => l.id === selected?.id || inBounds(view.bounds, l))
     : locations;
-  const hiddenCount = locations.length - visible.length;
+  // Keep the open place on the map even after panning away from it.
+  const pins =
+    selected && !locations.some((l) => l.id === selected.id)
+      ? [...locations, selected]
+      : locations;
   const sorted = sortLocations(visible, sort, view?.center);
   const listed = sorted.slice(0, shown);
   // A new map area or sort starts again from the top of the list.
@@ -247,14 +288,7 @@ export default function App() {
     0,
   );
   const items = tab === "tenant" ? reviews : interactions;
-  const topRated = locations
-    .filter((l) => l.summary.average_rating != null)
-    .sort(
-      (a, b) =>
-        b.summary.average_rating! - a.summary.average_rating! ||
-        b.summary.tenant_review_count - a.summary.tenant_review_count,
-    )
-    .slice(0, 3);
+  const topRated = stats?.top_rated ?? [];
   const closeDetails = () => {
     setSelected(null);
     setFlat(null);
@@ -277,7 +311,6 @@ export default function App() {
           <div className="topbar-search">
             <LocalitySearch
               compact
-              locations={locations}
               onArea={openArea}
               onPlace={openPlace}
               onBrowseAll={browseAll}
@@ -302,26 +335,39 @@ export default function App() {
           <section className="hero">
             <div className="hero-copy">
               <p className="eyebrow">
-                <Icon name="shield" size={16} /> Reviews by tenants, for tenants
+                <Icon name="shield" size={16} /> India’s rental ratings,
+                building by building
               </p>
               <h1>Rent with your eyes open.</h1>
               <p className="lead">
-                See what past tenants say about a flat’s owner — deposits,
-                repairs, rent hikes — before you sign anything.
+                {stats && stats.location_count > 0
+                  ? `${formatAtLeast(stats.location_count)} buildings across India, rated by the people who lived there.`
+                  : "Buildings across India, rated by the people who lived there."}{" "}
+                See what past tenants say about an owner — deposits, repairs,
+                rent hikes — before you sign anything.
               </p>
               <LocalitySearch
-                locations={locations}
                 onArea={openArea}
                 onPlace={openPlace}
                 onBrowseAll={browseAll}
               />
             </div>
-            <RatingSummary locations={locations} loading={loading} />
+            <RatingSummary stats={stats} failed={statsError} />
+          </section>
+          <section className="scale" aria-label="Rental Review in numbers">
+            <ul className="scale-grid">
+              {SCALE_FIGURES.map(([key, label]) => (
+                <li key={key}>
+                  <strong>{stats ? formatCount(stats[key]) : "—"}</strong>
+                  <span>{label}</span>
+                </li>
+              ))}
+            </ul>
           </section>
           {topRated.length > 0 && (
             <section className="block" aria-labelledby="top-title">
               <div className="block-head">
-                <h2 id="top-title">Top-rated places</h2>
+                <h2 id="top-title">Top-rated buildings in India</h2>
                 <button className="text-button" onClick={browseAll}>
                   See all on the map <Icon name="arrow" size={16} />
                 </button>
@@ -342,14 +388,15 @@ export default function App() {
                       </strong>{" "}
                       <span className="top-address">{location.address}</span>{" "}
                       <span className="top-meta">
-                        {location.summary.tenant_review_count} tenant{" "}
-                        {location.summary.tenant_review_count === 1
-                          ? "review"
-                          : "reviews"}{" "}
-                        · {location.summary.interaction_review_count}{" "}
-                        {location.summary.interaction_review_count === 1
-                          ? "interaction"
-                          : "interactions"}
+                        {plural(
+                          location.summary.tenant_review_count,
+                          "tenant review",
+                        )}{" "}
+                        ·{" "}
+                        {plural(
+                          location.summary.interaction_review_count,
+                          "interaction",
+                        )}
                       </span>
                     </button>
                   </li>
@@ -441,7 +488,7 @@ export default function App() {
                   <p className="panel-count" aria-live="polite">
                     {loading
                       ? "Loading…"
-                      : `${visible.length} ${visible.length === 1 ? "place" : "places"} in this area · ${totalReviews} experiences`}
+                      : `${plural(visible.length, "place")}${more ? "+" : ""} in this area · ${plural(totalReviews, "experience")}`}
                   </p>
                   <div className="panel-tools">
                     {!loading && visible.length > 1 ? (
@@ -487,42 +534,26 @@ export default function App() {
                       <li />
                     </ul>
                   )}
-                  {!loading && !error && !locations.length && (
+                  {!loading && !error && !visible.length && (
                     <div className="empty-state">
-                      <Icon name="search" size={28} />
-                      <h3>No places found</h3>
-                      <p>Try a different building or neighbourhood.</p>
+                      <Icon name="pin" size={28} />
+                      <h3>No places in this area</h3>
+                      <p>
+                        Move or zoom out the map, or tap the map to add a place
+                        here.
+                      </p>
+                      <button
+                        className="button secondary small"
+                        onClick={() => setZoomOut((n) => n + 1)}
+                      >
+                        Zoom out
+                      </button>
                     </div>
                   )}
-                  {!loading &&
-                    !error &&
-                    locations.length > 0 &&
-                    !visible.length && (
-                      <div className="empty-state">
-                        <Icon name="pin" size={28} />
-                        <h3>No places in this area</h3>
-                        <p>
-                          Move or zoom out the map, or tap the map to add a
-                          place here.
-                        </p>
-                        <button
-                          className="button secondary small"
-                          onClick={() => setFitAll((n) => n + 1)}
-                        >
-                          Show all {locations.length} places
-                        </button>
-                      </div>
-                    )}
-                  {!loading && visible.length > 0 && hiddenCount > 0 && (
+                  {!loading && more && (
                     <p className="area-summary">
-                      {hiddenCount} more{" "}
-                      {hiddenCount === 1 ? "place" : "places"} outside this area
-                      <button
-                        className="text-button"
-                        onClick={() => setFitAll((n) => n + 1)}
-                      >
-                        Show all
-                      </button>
+                      Showing the first {formatCount(locations.length)} places
+                      here. Zoom in to see every building.
                     </p>
                   )}
                   {!loading && listed.length > 0 && (
@@ -593,7 +624,8 @@ export default function App() {
                       Show {Math.min(PAGE_SIZE, sorted.length - listed.length)}{" "}
                       more
                       <span>
-                        {listed.length} of {sorted.length} shown
+                        {formatCount(listed.length)} of{" "}
+                        {formatCount(sorted.length)} shown
                       </span>
                     </button>
                   )}
@@ -629,11 +661,13 @@ export default function App() {
                   </div>
                   <div>
                     <dt>Reviews</dt>
-                    <dd>{selected.summary.tenant_review_count}</dd>
+                    <dd>{formatCount(selected.summary.tenant_review_count)}</dd>
                   </div>
                   <div>
                     <dt>Interactions</dt>
-                    <dd>{selected.summary.interaction_review_count}</dd>
+                    <dd>
+                      {formatCount(selected.summary.interaction_review_count)}
+                    </dd>
                   </div>
                 </dl>
                 <div className="flat-row">
@@ -809,7 +843,7 @@ export default function App() {
           </div>
           <div className="map-pane">
             <PropertyMap
-              locations={locations}
+              locations={pins}
               selected={selected?.id || null}
               onSelect={selectLocation}
               draft={draft}
@@ -818,7 +852,7 @@ export default function App() {
                 setDraft(point);
               }}
               onViewChange={setView}
-              fitAll={fitAll}
+              zoomOut={zoomOut}
               insetLeft={inset}
               focus={focus}
               highlighted={hovered}
@@ -948,8 +982,10 @@ export default function App() {
             </li>
           </ol>
           <p className="dev-notice">
-            This working model includes fictional properties in Bengaluru. Map
-            tiles are provided by OpenStreetMap and need an internet connection.
+            This working model includes fictional properties in Bengaluru. Only
+            the buildings in view are loaded, so the map stays fast at any
+            scale. Map tiles are provided by OpenStreetMap and need an internet
+            connection.
           </p>
         </Modal>
       )}
@@ -958,6 +994,27 @@ export default function App() {
 }
 
 const PAGE_SIZE = 20;
+/** Up to 500 pins per view; denser views ask the visitor to zoom in. */
+const MAX_PAGES = 5;
+const SCALE_FIGURES = [
+  ["location_count", "Buildings mapped"],
+  ["rated_location_count", "Buildings rated"],
+  ["tenant_review_count", "Tenant reviews"],
+  ["interaction_review_count", "Owner interactions"],
+] as const;
+
+/** A first map query for an area, before the map has reported its view. */
+function areaBounds(area: Area): Bounds {
+  if (area.bounds) return area.bounds;
+  // Roughly the visible span at the area's zoom level on a laptop screen.
+  const span = 360 / 2 ** (area.zoom ?? 15);
+  return {
+    west: area.center.longitude - span,
+    east: area.center.longitude + span,
+    south: Math.max(-90, area.center.latitude - span / 2),
+    north: Math.min(90, area.center.latitude + span / 2),
+  };
+}
 /** Must match the floating panel width + gap in styles.css. */
 function floatingInset() {
   return window.matchMedia?.("(min-width: 861px)").matches ? 440 : 0;
@@ -1011,91 +1068,75 @@ function formatDate(value: string) {
   });
 }
 
-/** Live rating summary for the landing page, built from loaded places. */
+/** National rating summary for the landing page, from server-side totals. */
 function RatingSummary({
-  locations,
-  loading,
+  stats,
+  failed,
 }: {
-  locations: Location[];
-  loading: boolean;
+  stats: Stats | null;
+  failed: boolean;
 }) {
-  const rated = locations.filter((l) => l.summary.average_rating != null);
-  const tenantReviews = locations.reduce(
-    (n, l) => n + l.summary.tenant_review_count,
-    0,
-  );
-  const interactions = locations.reduce(
-    (n, l) => n + l.summary.interaction_review_count,
-    0,
-  );
-  // Weighted by review count so busy places count for more.
-  const weight = rated.reduce((n, l) => n + l.summary.tenant_review_count, 0);
-  const average = weight
-    ? rated.reduce(
-        (n, l) => n + l.summary.average_rating! * l.summary.tenant_review_count,
-        0,
-      ) / weight
-    : null;
-  const bands = [5, 4, 3, 2, 1].map((star) => ({
-    star,
-    count: rated.filter(
-      (l) =>
-        Math.min(5, Math.max(1, Math.round(l.summary.average_rating!))) ===
-        star,
-    ).length,
-  }));
-  const most = Math.max(1, ...bands.map((b) => b.count));
-  return (
-    <aside className="summary" aria-label="Ratings across all places">
-      {loading ? (
+  if (!stats)
+    return (
+      <aside className="summary" aria-label="Ratings across India">
         <div className="summary-loading" role="status">
-          Loading ratings…
+          {failed ? "Ratings are unavailable right now." : "Loading ratings…"}
         </div>
-      ) : (
-        <>
-          <p className="summary-label">Across {locations.length} places</p>
-          <div className="summary-score">
-            <strong>{average == null ? "—" : average.toFixed(1)}</strong>
+      </aside>
+    );
+  const average = stats.average_rating;
+  const rated = Math.max(1, stats.rated_location_count);
+  const most = Math.max(1, ...stats.rating_bands.map((b) => b.count));
+  return (
+    <aside className="summary" aria-label="Ratings across India">
+      <p className="summary-label">
+        Across {plural(stats.rated_location_count, "rated building")} in India
+      </p>
+      <div className="summary-score">
+        <strong>{average == null ? "—" : average.toFixed(1)}</strong>
+        <span
+          className="stars"
+          role="img"
+          aria-label={
+            average == null
+              ? "No ratings yet"
+              : `Average ${average.toFixed(1)} out of 5`
+          }
+        >
+          {[1, 2, 3, 4, 5].map((n) => (
             <span
-              className="stars"
-              role="img"
-              aria-label={
-                average == null
-                  ? "No ratings yet"
-                  : `Average ${average.toFixed(1)} out of 5`
+              key={n}
+              className={
+                average != null && n <= Math.round(average) ? "on" : ""
               }
             >
-              {[1, 2, 3, 4, 5].map((n) => (
-                <span
-                  key={n}
-                  className={
-                    average != null && n <= Math.round(average) ? "on" : ""
-                  }
-                >
-                  <Icon name="star" size={20} />
-                </span>
-              ))}
+              <Icon name="star" size={20} />
             </span>
-          </div>
-          <p className="summary-sub">
-            {tenantReviews} tenant reviews · {interactions} interactions
-          </p>
-          <ul className="bands" aria-label="Places by tenant rating">
-            {bands.map((b) => (
-              <li key={b.star}>
-                <span>{b.star} ★</span>
-                <span className="bar">
-                  <span
-                    className={`fill s${b.star}`}
-                    style={{ width: `${(b.count / most) * 100}%` }}
-                  />
-                </span>
-                <span className="band-count">{b.count}</span>
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
+          ))}
+        </span>
+      </div>
+      <p className="summary-sub">
+        From {plural(stats.tenant_review_count, "tenant review")}
+      </p>
+      <ul className="bands" aria-label="Share of buildings by tenant rating">
+        {stats.rating_bands.map((b) => (
+          <li key={b.stars}>
+            <span>{b.stars} ★</span>
+            <span className="bar">
+              <span
+                className={`fill s${b.stars}`}
+                style={{ width: `${(b.count / most) * 100}%` }}
+              />
+            </span>
+            <span
+              className="band-count"
+              title={`${formatCount(b.count)} buildings`}
+            >
+              {Math.round((b.count / rated) * 100)}%
+            </span>
+          </li>
+        ))}
+      </ul>
     </aside>
   );
 }

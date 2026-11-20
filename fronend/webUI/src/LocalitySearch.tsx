@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Icon } from "./components";
-import type { Location } from "./api";
+import { api } from "./api";
+import type { List, Location } from "./api";
 import type { Bounds, Point } from "./Map";
 
 /** Where the map should open: a locality, a single place, or everything. */
@@ -93,13 +94,11 @@ type Option =
   { kind: "place"; location: Location } | { kind: "area"; area: Area };
 
 export default function LocalitySearch({
-  locations,
   onArea,
   onPlace,
   onBrowseAll,
   compact = false,
 }: {
-  locations: Location[];
   onArea: (area: Area) => void;
   onPlace: (location: Location) => void;
   onBrowseAll: () => void;
@@ -137,22 +136,33 @@ export default function LocalitySearch({
       controller.abort();
     };
   }, [term]);
-  const lower = term.toLowerCase();
-  const places =
-    term.length >= 2
-      ? locations
-          .filter((l) =>
-            `${l.building_name || ""} ${l.address}`
-              .toLowerCase()
-              .includes(lower),
-          )
-          .slice(0, 3)
-      : [];
+  // Buildings are searched on the server: the catalogue is far too big to
+  // hold in the browser.
+  const [places, setPlaces] = useState<Location[]>([]);
+  useEffect(() => {
+    setPlaces([]);
+    if (term.length < 2) return;
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      api<List<Location>>(
+        `/locations?reviewed_only=false&limit=3&q=${encodeURIComponent(term)}`,
+        { signal: controller.signal },
+      )
+        .then((r) => setPlaces(r.data.slice(0, 3)))
+        .catch(() => {
+          // Locality suggestions still work without building matches.
+        });
+    }, 250);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [term]);
   const options: Option[] = [
     ...places.map((location) => ({ kind: "place" as const, location })),
     ...areas.map((area) => ({ kind: "area" as const, area })),
   ];
-  useEffect(() => setActive(-1), [term, areas.length]);
+  useEffect(() => setActive(-1), [term, areas.length, places.length]);
   useEffect(() => {
     if (active >= 0)
       document
@@ -309,7 +319,7 @@ export default function LocalitySearch({
           </button>
           <span aria-hidden="true">·</span>
           <button type="button" className="text-button" onClick={onBrowseAll}>
-            Browse all places on the map
+            Browse places on the map
           </button>
         </div>
       )}

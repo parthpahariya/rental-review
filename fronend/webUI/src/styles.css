@@ -332,6 +332,7 @@ svg {
   padding-top: 24px;
 }
 .hero,
+.scale,
 .block,
 .cta {
   width: calc(100% - 48px);
@@ -436,7 +437,7 @@ svg {
 }
 .bands li {
   display: grid;
-  grid-template-columns: 36px 1fr 24px;
+  grid-template-columns: 36px 1fr 44px;
   align-items: center;
   gap: 10px;
   font-size: 14px;
@@ -476,6 +477,44 @@ svg {
 }
 .stars .on {
   color: var(--gold);
+}
+
+/* National numbers under the hero: large, compact (L / Cr) figures. */
+.scale {
+  margin-top: -40px;
+}
+.scale-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 2px solid var(--ink);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  overflow: hidden;
+}
+.scale-grid li {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 24px 28px;
+}
+.scale-grid li + li {
+  border-left: 1px solid var(--line);
+}
+.scale-grid strong {
+  font-family: var(--font-display);
+  font-size: clamp(30px, 3.4vw, 44px);
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+.scale-grid span {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--muted);
 }
 
 .block-head {
@@ -1649,6 +1688,15 @@ select {
   .top-grid {
     grid-template-columns: 1fr 1fr;
   }
+  .scale-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+  .scale-grid li:nth-child(3) {
+    border-left: 0;
+  }
+  .scale-grid li:nth-child(n + 3) {
+    border-top: 1px solid var(--line);
+  }
   .kinds {
     grid-template-columns: 1fr;
   }
@@ -1762,6 +1810,12 @@ select {
   }
   .top-grid {
     grid-template-columns: 1fr;
+  }
+  .scale {
+    margin-top: -24px;
+  }
+  .scale-grid li {
+    padding: 18px 16px;
   }
   .block-head {
     flex-direction: column;

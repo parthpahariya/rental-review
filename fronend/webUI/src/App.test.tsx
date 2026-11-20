@@ -55,6 +55,22 @@ const interaction = {
   submitted_at: "2025-02-02T00:00:00Z",
 };
 
+const stats = {
+  location_count: 12_345_678,
+  rated_location_count: 4_560_000,
+  tenant_review_count: 23_400_000,
+  interaction_review_count: 98_765,
+  average_rating: 4.2,
+  rating_bands: [
+    { stars: 5, count: 2_280_000 },
+    { stars: 4, count: 1_368_000 },
+    { stars: 3, count: 456_000 },
+    { stars: 2, count: 228_000 },
+    { stars: 1, count: 228_000 },
+  ],
+  top_rated: [location],
+};
+
 function result(data: unknown, list = true) {
   return new Response(
     JSON.stringify(list ? { data, page: { next_cursor: null } } : { data }),
@@ -68,6 +84,8 @@ beforeEach(() => {
   vi.stubGlobal(
     "fetch",
     vi.fn((input: string) => {
+      if (input.includes("/stats"))
+        return Promise.resolve(result(stats, false));
       if (input.includes("/locations/location-1/flats"))
         return Promise.resolve(result([flat]));
       if (input.includes("/locations"))
@@ -125,7 +143,7 @@ afterEach(() => {
 
 async function browse(user: ReturnType<typeof userEvent.setup>) {
   await user.click(
-    screen.getByRole("button", { name: /Browse all places on the map/ }),
+    screen.getByRole("button", { name: /Browse places on the map/ }),
   );
 }
 
@@ -233,15 +251,18 @@ describe("Rental Review", () => {
     );
     const user = userEvent.setup();
     render(<App />);
-    await waitFor(() =>
-      expect(fetch).toHaveBeenCalledWith(
-        expect.stringContaining("/locations"),
-        expect.anything(),
-      ),
-    );
     await user.type(
       screen.getByRole("combobox", { name: /Search for a locality/ }),
       "Parkside",
+    );
+    // Buildings are matched on the server, not from a downloaded catalogue.
+    await waitFor(() =>
+      expect(fetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/locations?reviewed_only=false&limit=3&q=Parkside",
+        ),
+        expect.anything(),
+      ),
     );
     await user.click(
       await screen.findByRole("option", { name: /Parkside Residences/ }),
@@ -386,7 +407,11 @@ describe("Rental Review", () => {
     };
     vi.stubGlobal(
       "fetch",
-      vi.fn(() => Promise.resolve(result(many))),
+      vi.fn((input: string) =>
+        Promise.resolve(
+          input.includes("/stats") ? result(stats, false) : result(many),
+        ),
+      ),
     );
     const user = userEvent.setup();
     render(<App />);
@@ -402,6 +427,65 @@ describe("Rental Review", () => {
     expect(cards()).toHaveLength(20);
     await user.selectOptions(screen.getByLabelText("Sort by"), "reviews");
     expect(cards()[0]).toHaveAccessibleName(/Tower 3\b/);
+  });
+
+  it("presents national totals in lakh and crore without listing every building", async () => {
+    render(<App />);
+    expect(await screen.findByText("1.2 Cr")).toBeInTheDocument();
+    expect(screen.getByText("45.6 L")).toBeInTheDocument();
+    expect(screen.getByText("2.3 Cr")).toBeInTheDocument();
+    expect(screen.getByText("98,765")).toBeInTheDocument();
+    expect(
+      screen.getByText(/1\.2 Cr\+ buildings across India/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Across 45\.6 L rated buildings/),
+    ).toBeInTheDocument();
+    expect(screen.getByText("50%")).toBeInTheDocument();
+    // Top-rated buildings come from the stats endpoint.
+    expect(
+      screen.getByRole("button", { name: /Parkside Residences/ }),
+    ).toBeInTheDocument();
+    const urls = vi.mocked(fetch).mock.calls.map(([url]) => String(url));
+    expect(urls.some((u) => u.includes("/locations"))).toBe(false);
+  });
+
+  it("loads only the visible map area and caps dense views", async () => {
+    mapView.current = {
+      center: { latitude: 12, longitude: 77 },
+      bounds: { west: 76.9, south: 11.9, east: 77.1, north: 12.1 },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: string) => {
+        if (input.includes("/stats"))
+          return Promise.resolve(result(stats, false));
+        const page = Array.from({ length: 100 }, (_, i) => ({
+          ...location,
+          id: `${input.length}-${Math.random()}-${i}`,
+        }));
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({ data: page, page: { next_cursor: "next" } }),
+          ),
+        );
+      }),
+    );
+    const user = userEvent.setup();
+    render(<App />);
+    await browse(user);
+    expect(
+      await screen.findByText(/500 places\+ in this area/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Zoom in to see every building/),
+    ).toBeInTheDocument();
+    const pages = vi
+      .mocked(fetch)
+      .mock.calls.map(([url]) => String(url))
+      .filter((u) => u.includes("/locations?"));
+    expect(pages).toHaveLength(5);
+    expect(pages[0]).toContain("bbox=76.90000,11.90000,77.10000,12.10000");
   });
 
   it("shows a recovery action when public location retrieval fails", async () => {

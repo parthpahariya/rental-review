@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import L from "leaflet";
 import "leaflet.markercluster";
 import type { Location } from "./api";
+import { formatCount, formatShort } from "./format";
 
 export type Point = { latitude: number; longitude: number };
 export type Bounds = {
@@ -26,7 +27,7 @@ export default function PropertyMap({
   draft = null,
   onPick,
   onViewChange,
-  fitAll = 0,
+  zoomOut = 0,
   insetLeft = 0,
   highlighted = null,
   onHover,
@@ -38,8 +39,8 @@ export default function PropertyMap({
   draft?: Point | null;
   onPick?: (point: Point) => void;
   onViewChange?: (view: MapView) => void;
-  /** Increment to zoom the map out to every location. */
-  fitAll?: number;
+  /** Increment to zoom the map out a couple of levels. */
+  zoomOut?: number;
   /** Width in px of a panel floating over the map's left edge. */
   insetLeft?: number;
   /** Location to emphasise, e.g. while its list card is hovered. */
@@ -201,17 +202,9 @@ export default function PropertyMap({
       ?.classList.add("map-highlight");
   }
   useEffect(() => {
-    if (!fitAll || !map.current || !locations.length) return;
-    map.current.fitBounds(
-      L.latLngBounds(locations.map((l) => [l.latitude, l.longitude])),
-      {
-        paddingTopLeft: [70 + inset.current, 70],
-        paddingBottomRight: [70, 70],
-        maxZoom: 14,
-      },
-    );
-    // Only respond to explicit "show all" requests.
-  }, [fitAll]);
+    // Only the places in view are loaded, so "show more" means widening the view.
+    if (zoomOut && map.current) map.current.zoomOut(2);
+  }, [zoomOut]);
   useEffect(() => {
     const instance = map.current;
     if (!instance) return;
@@ -258,10 +251,10 @@ export default function PropertyMap({
 
 function clusterIcon(cluster: L.MarkerCluster) {
   const count = cluster.getChildCount();
-  const size = count < 10 ? 44 : count < 100 ? 52 : 60;
+  const size = count < 10 ? 44 : count < 100 ? 52 : count < 1000 ? 60 : 68;
   return L.divIcon({
     className: "",
-    html: `<span class="map-cluster" style="width:${size}px;height:${size}px" aria-label="${count} places">${count}</span>`,
+    html: `<span class="map-cluster" style="width:${size}px;height:${size}px" aria-label="${formatCount(count)} places">${formatShort(count)}</span>`,
     iconSize: [size, size],
     iconAnchor: [size / 2, size / 2],
   });

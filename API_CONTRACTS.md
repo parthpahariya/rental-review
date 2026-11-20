@@ -207,6 +207,7 @@ The initial policy has `proof_required: false`. The server selects the policy ef
 | `GET /locations/{location_id}` | None | Single `MapLocation`, even if it currently has no reviews |
 | `GET /locations/{location_id}/flats` | None | List of `Flat`, including flats without feedback |
 | `GET /flats/{flat_id}` | None | Single `Flat` |
+| `GET /stats` | None (not paginated) | Single object: `location_count`, `rated_location_count`, `tenant_review_count`, `interaction_review_count`, `average_rating: number\|null`, `rating_bands: [{stars, count}]` (locations by rounded average, 5→1), `top_rated: MapLocation[]` (up to 3). Cached for up to 60 seconds. |
 
 `bbox` uses inclusive WGS84 longitude/latitude bounds. Longitude must be within `[-180, 180]`, latitude within `[-90, 90]`, and south must not exceed north. A west value greater than east denotes an antimeridian-crossing viewport. Invalid bounds return `400 INVALID_BOUNDS`. No bounds means all locations, paginated. `q` performs case-insensitive substring matching on location address/building name; combine it with other filters using AND.
 
@@ -219,6 +220,8 @@ Use `reviewed_only=false` to find existing locations for a first review. Unknown
 Adds a new map pin together with its first flat, so a user can review a place that is not yet listed.
 
 Request: `{ "address": nonblank_string (≤500), "building_name": nonblank_string (≤200) | null, "latitude": number, "longitude": number, "flat_label": nonblank_string (≤100) }`. `building_name` is optional. Coordinates must be finite WGS84 values.
+
+Locations are stored provider-neutral: WGS84 decimal-degree `latitude`/`longitude` plus the user-entered `address` and `building_name`. No map- or geocoder-specific identifiers, tile coordinates or zoom levels are stored, so the web client can switch map providers (e.g. Leaflet/OpenStreetMap to Google Maps) without a data migration.
 
 `201`: `{ "data": Flat }`; `Location: /api/v1/flats/{flat_id}`. Errors: `409 LOCATION_ALREADY_EXISTS` when an existing location lies within 30 metres of the supplied coordinates (users should review or add a flat to that location instead). Creation is serialized so two concurrent pins at the same spot cannot both succeed. The new location appears with `reviewed_only=false` immediately, and with the default filter once it has a review.
 

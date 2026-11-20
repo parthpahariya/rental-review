@@ -78,6 +78,15 @@ class RateLimit(Base):
 
 
 class Location(Identity, Timestamps, Base):
+    """A building pin, stored independently of any map or geocoding provider.
+
+    Only plain WGS84 (EPSG:4326) degrees and user-entered text are kept, which
+    Leaflet/OpenStreetMap, Google Maps and Mapbox all use as-is. Do not add
+    provider-specific data here (OSM ids, Google place_ids, tile x/y, zoom
+    levels, projected Web Mercator metres); if a provider id is ever needed,
+    store it in a separate table keyed by (location_id, provider).
+    """
+
     __tablename__ = "locations"
     address: Mapped[str] = mapped_column(Text)
     building_name: Mapped[str | None] = mapped_column(String(200))
@@ -87,6 +96,8 @@ class Location(Identity, Timestamps, Base):
         CheckConstraint("latitude BETWEEN -90 AND 90"),
         CheckConstraint("longitude BETWEEN -180 AND 180"),
         CheckConstraint("length(trim(address)) > 0"),
+        # Map viewport (bbox) queries must stay fast with crores of buildings.
+        Index("ix_location_coordinates", "latitude", "longitude"),
     )
 
 

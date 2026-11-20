@@ -426,3 +426,28 @@ def test_add_flat_to_existing_pin(client, auth, flat_id):
     assert missing.status_code == 404
     labels = [f["label"] for f in client.get(url).json()["data"]]
     assert sorted(labels) == ["101", "102"]
+
+
+def test_site_stats_aggregate_without_listing_locations(client, auth, flat_id):
+    from app import properties
+
+    create_review(client, flat_id, auth, rating=4)
+    create_review(
+        client,
+        flat_id,
+        auth,
+        rating=5,
+        tenancy_start_date="2025-02-01",
+        tenancy_end_date="2025-06-01",
+    )
+    client.post(f"/api/v1/flats/{flat_id}/interactions", headers=auth, json=interaction_payload())
+    properties._stats_cache.clear()
+    data = client.get("/api/v1/stats").json()["data"]
+    assert data["location_count"] == 1
+    assert data["rated_location_count"] == 1
+    assert data["tenant_review_count"] == 2
+    assert data["interaction_review_count"] == 1
+    assert data["average_rating"] == 4.5
+    assert {b["stars"]: b["count"] for b in data["rating_bands"]} == {5: 1, 4: 0, 3: 0, 2: 0, 1: 0}
+    assert [t["building_name"] for t in data["top_rated"]] == ["Test House"]
+    assert data["top_rated"][0]["summary"]["tenant_review_count"] == 2
