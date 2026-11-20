@@ -19,7 +19,6 @@ backend:
     POSTGRES_PASSWORD: rental_test
     DATABASE_URL: postgresql+psycopg://rental:rental_test@postgres:5432/rental_test
     APP_ENV: test
-    SMS_BACKEND: development
     PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
   cache:
     key:

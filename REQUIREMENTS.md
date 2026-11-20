@@ -13,24 +13,18 @@ Allow tenants to review rental property owners, allow users to record interactio
 
 ## Functional requirements
 
-### FR-01: Account creation and mobile OTP sign-in
+### FR-01: Account creation and Google sign-in
 
-Users must be able to create an account and sign in using their mobile number and a one-time password (OTP) sent by SMS.
+Users must be able to create an account and sign in with their Google account. Google is the only sign-in method; there is no phone, OTP, or password sign-in.
 
 Acceptance criteria:
 
-- A user can register with valid required account information.
-- Invalid or duplicate registration information produces a clear error.
-- A user can enter a mobile number with its country code and request an OTP by SMS.
-- Invalid mobile numbers produce a clear validation error.
-- The mobile number must be verified with a valid OTP before registration completes or access to an account is granted.
-- A registered user who verifies their mobile number signs in to their existing account; the flow must not create a duplicate account for that number.
-- A new user can verify their mobile number and complete any remaining required registration information to create an account.
-- Mobile OTP sign-in does not require a password.
-- OTPs expire after a configured time and can be used only once; incorrect, expired, or already-used codes produce clear feedback.
-- A user can request another OTP after a resend cooldown; a replacement code invalidates the previous code.
-- OTP requests and verification attempts are rate-limited, with clear feedback when a limit is reached.
-- SMS delivery failures provide clear feedback and a way to retry within the request limits.
+- A user can sign in with Google in one step; the first sign-in creates the account.
+- A returning user signs in to their existing account; the flow must not create a duplicate account for the same Google account, even if its email changes.
+- Only Google accounts with a verified email are accepted.
+- Failed or cancelled Google sign-in produces clear feedback and can be retried.
+- Sign-in attempts are rate-limited, with clear feedback when a limit is reached.
+- Accounts created before phone sign-in was removed keep their reviews but can no longer sign in.
 - A user must be signed in to submit an owner review.
 - A user must be signed in to add an owner interaction.
 
@@ -47,7 +41,7 @@ Acceptance criteria:
 - Previously visible tenant reviews remain visible while the author's account is inactive, including in the flat's Tenant Reviews tab and map-based review results.
 - Recorded interaction reviews remain visible to everyone in the flat's Interactions tab and map-based results while the author's account is inactive.
 - The deactivation confirmation explains that existing tenant reviews and interaction reviews will remain visible.
-- A user with an inactive account can verify their registered mobile number through the OTP flow and choose to reactivate the account.
+- A user with an inactive account can sign in with the same Google account and choose to reactivate the account.
 - Reactivation restores access to the same account and its existing reviews and interactions without creating a duplicate account.
 - Reactivation does not restart or extend the 30-day review editing window.
 
@@ -111,7 +105,7 @@ Acceptance criteria:
 - A successfully posted interaction review is saved and visible to everyone in the relevant flat's Interactions tab, including visitors who are not signed in.
 - Interaction reviews are published immediately after successful submission, without prior admin approval.
 - Reading interaction reviews does not require an account; posting them requires a signed-in user with an active account.
-- Public interaction reviews must not expose the author's private account information, including their mobile number.
+- Public interaction reviews must not expose the author's private account information, including their email.
 - A signed-in author with an active account can add supporting files to their own interaction review when posting it or afterward.
 - The author can delete supporting files from their own interaction review. Deleting a file removes its attachment from the review without deleting the interaction review itself.
 - Other users cannot add or delete supporting files on another author's interaction review.
@@ -152,7 +146,7 @@ Acceptance criteria:
 - Account deactivation must not hide or remove recorded interaction reviews.
 - Account management actions must be restricted to the account holder.
 - Credentials and account information must be protected; passwords, if used, must never be stored as plain text.
-- Mobile numbers must be treated as private account information, and OTPs must not appear in application logs or be stored as plain text.
+- Email addresses must be treated as private account information, and Google credentials and session tokens must not appear in application logs or be stored as plain text.
 - Proof of tenancy must be kept private and must not be displayed with public reviews.
 - Map results must not expose tenants' private account information.
 - Account, review, and interaction forms must work on mobile and desktop screens.
@@ -163,8 +157,7 @@ Acceptance criteria:
 
 Only unresolved questions are listed below. Once a decision is made, record it in the relevant requirements and remove it from this list.
 
-- **Registration:** Which account fields are required in addition to the verified mobile number?
-- **Mobile OTP:** Which SMS provider and countries are supported, and what OTP expiry, resend cooldown, and request and verification limits apply?
+- **Registration:** Which account fields are required in addition to the Google account?
 - **Interactions:** Can authors edit or delete interaction reviews, or link them to a tenant review?
 - **Property records:** Signed-in users add locations by pinning an empty map point and add flats to existing locations. A new pin within 30 metres of an existing location and a repeated flat label are rejected. Merging or correcting duplicates that slip through (for example, a building pinned twice 40 metres apart) is still undecided.
 - **Map clicks (decided):** Selecting a marker opens its flats and reviews. Selecting an empty point drops a draggable pin for adding a new place, and lists existing places within 100 metres so users can review those instead.

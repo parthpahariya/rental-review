@@ -86,6 +86,8 @@ beforeEach(() => {
     vi.fn((input: string) => {
       if (input.includes("/stats"))
         return Promise.resolve(result(stats, false));
+      if (input.includes("/auth/providers"))
+        return Promise.resolve(result({ google_client_id: null }, false));
       if (input.includes("/locations/location-1/flats"))
         return Promise.resolve(result([flat]));
       if (input.includes("/locations"))
@@ -96,41 +98,6 @@ beforeEach(() => {
         return Promise.resolve(result([review]));
       if (input.includes("/flats/flat-1/interactions"))
         return Promise.resolve(result([interaction]));
-      if (input.includes("/auth/otp/challenges"))
-        return Promise.resolve(
-          result(
-            {
-              challenge_id: "challenge",
-              development_code: "123456",
-              resend_available_at: new Date().toISOString(),
-            },
-            false,
-          ),
-        );
-      if (input.includes("/auth/otp/verifications"))
-        return Promise.resolve(
-          result(
-            {
-              outcome: "registration_required",
-              completion_token: "completion",
-            },
-            false,
-          ),
-        );
-      if (input.includes("/auth/registrations"))
-        return Promise.resolve(
-          result(
-            {
-              account: {
-                id: "me",
-                mobile_number: "+919876543210",
-                role: "user",
-              },
-              session: { token: "test-session" },
-            },
-            false,
-          ),
-        );
       throw new Error(`Unexpected request: ${input}`);
     }),
   );
@@ -270,23 +237,86 @@ describe("Rental Review", () => {
     expect(await screen.findByText("A helpful owner.")).toBeInTheDocument();
   });
 
-  it("completes development OTP registration and opens an account session", async () => {
+  it("explains when Google sign-in is not configured and offers no phone login", async () => {
     const user = userEvent.setup();
     render(<App />);
     await user.click(screen.getByRole("button", { name: "Sign in" }));
-    await user.type(screen.getByLabelText("Mobile number"), "9876543210");
-    await user.click(
-      screen.getByRole("button", { name: /Send verification code/ }),
+    expect(
+      await screen.findByText(/Google sign-in isn’t available right now/),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText("Mobile number")).not.toBeInTheDocument();
+  });
+
+  it("signs in with Google when the server has a client id", async () => {
+    const initialize = vi.fn();
+    // Stands in for Google's script: renders a button that returns a credential.
+    vi.stubGlobal("google", {
+      accounts: {
+        id: {
+          initialize,
+          renderButton: (el: HTMLElement) => {
+            const button = document.createElement("button");
+            button.textContent = "Continue with Google";
+            button.type = "button";
+            button.onclick = () =>
+              initialize.mock.calls[0][0].callback({ credential: "google-jwt" });
+            el.appendChild(button);
+          },
+        },
+      },
+    });
+    const base = fetch as unknown as (
+      input: string,
+      init?: RequestInit,
+    ) => Promise<Response>;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: string, init?: RequestInit) => {
+        if (input.includes("/auth/providers"))
+          return Promise.resolve(
+            result({ google_client_id: "client.apps.googleusercontent.com" }, false),
+          );
+        if (input.includes("/auth/google"))
+          return Promise.resolve(
+            result(
+              {
+                outcome: "registered",
+                account: {
+                  id: "me",
+                  email: "tenant@example.com",
+                  role: "user",
+                },
+                session: { token: "google-session" },
+              },
+              false,
+            ),
+          );
+        return base(input, init);
+      }),
     );
-    expect(await screen.findByText("123456")).toBeInTheDocument();
-    await user.type(screen.getByLabelText("Verification code"), "123456");
-    await user.click(screen.getByRole("button", { name: /Verify & continue/ }));
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    await user.click(
+      await screen.findByRole("button", { name: "Continue with Google" }),
+    );
     await waitFor(() =>
       expect(
         screen.getByRole("button", { name: "Your account" }),
       ).toBeInTheDocument(),
     );
-    expect(sessionStorage.getItem("rental-session")).toBe("test-session");
+    expect(initialize.mock.calls[0][0].client_id).toBe(
+      "client.apps.googleusercontent.com",
+    );
+    const call = vi
+      .mocked(fetch)
+      .mock.calls.find(([url]) => String(url).includes("/auth/google"));
+    expect(JSON.parse(String(call?.[1]?.body))).toEqual({
+      credential: "google-jwt",
+      reactivate: false,
+    });
+    expect(sessionStorage.getItem("rental-session")).toBe("google-session");
+    vi.unstubAllGlobals();
   });
 
   it("adds a new place from the map and opens the review form for it", async () => {
@@ -320,7 +350,7 @@ describe("Rental Review", () => {
         if (input.endsWith("/me"))
           return Promise.resolve(
             result(
-              { id: "me", mobile_number: "+919876543210", role: "user" },
+              { id: "me", email: "tenant@example.com", role: "user" },
               false,
             ),
           );

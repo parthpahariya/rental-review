@@ -3,7 +3,6 @@ from datetime import date
 from typing import Annotated, Literal
 from uuid import UUID
 
-import phonenumbers
 from pydantic import (
     BaseModel,
     BeforeValidator,
@@ -36,32 +35,10 @@ class Body(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class PhoneBody(Body):
-    mobile_number: str
-
-    @field_validator("mobile_number")
-    @classmethod
-    def phone(cls, value):
-        try:
-            parsed = phonenumbers.parse(value)
-            if not value.startswith("+") or not phonenumbers.is_valid_number(parsed):
-                raise ValueError()
-            return phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.E164)
-        except (ValueError, phonenumbers.NumberParseException):
-            raise ValueError("Enter a valid mobile number including country code") from None
-
-
-class VerifyBody(Body):
-    challenge_id: UUID
-    code: Annotated[str, StringConstraints(pattern=r"^\d{6}$")]
-
-
-class CompletionBody(Body):
-    completion_token: Nonblank
-
-
-class ReactivationBody(CompletionBody):
-    confirm: Literal[True]
+class GoogleBody(Body):
+    # The ID token (JWT) Google Identity Services hands the browser.
+    credential: Annotated[str, Field(min_length=20, max_length=4096)]
+    reactivate: bool = False
 
 
 class ConfirmationBody(Body):

@@ -5,13 +5,11 @@ from threading import Barrier
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import select
 
-from app.config import get_settings
 from app.database import SessionLocal
 from app.main import app
-from app.models import File, OtpChallenge, ProofPolicy, TenantReview, User, now
-from tests.conftest import sign_in
+from app.models import File, ProofPolicy, TenantReview, User, now
+from tests.conftest import google_token, sign_in
 
 
 def review_payload(**changes):
@@ -48,62 +46,6 @@ def test_health_and_anonymous_auth(client):
     assert response.status_code == 401
     assert response.headers["x-request-id"] == response.json()["error"]["request_id"]
     assert response.headers["cache-control"] == "no-store"
-
-
-def test_otp_single_use_and_existing_account(client):
-    first, account = sign_in(client)
-    second, account2 = sign_in(client)
-    assert account["id"] == account2["id"]
-    assert first != second
-    with SessionLocal() as db:
-        row = db.scalar(select(OtpChallenge).order_by(OtpChallenge.created_at.desc()).limit(1))
-        challenge_id = str(row.id)
-    response = client.post(
-        "/api/v1/auth/otp/verifications", json={"challenge_id": challenge_id, "code": "000000"}
-    )
-    assert response.status_code == 409
-    assert response.json()["error"]["code"] == "OTP_ALREADY_USED"
-
-
-def test_otp_replacement_wrong_attempts_and_expiry(client):
-    phone = {"mobile_number": "+919876543210"}
-    first = client.post("/api/v1/auth/otp/challenges", json=phone).json()["data"]
-    second = client.post("/api/v1/auth/otp/challenges", json=phone).json()["data"]
-    replaced = client.post(
-        "/api/v1/auth/otp/verifications",
-        json={"challenge_id": first["challenge_id"], "code": first["development_code"]},
-    )
-    assert replaced.json()["error"]["code"] == "OTP_REPLACED"
-    wrong = "000000" if second["development_code"] != "000000" else "111111"
-    invalid = client.post(
-        "/api/v1/auth/otp/verifications",
-        json={"challenge_id": second["challenge_id"], "code": wrong},
-    )
-    assert invalid.status_code == 401
-    with SessionLocal.begin() as db:
-        row = db.get(OtpChallenge, uuid.UUID(second["challenge_id"]))
-        assert row.attempt_count == 1
-        assert row.code_digest != second["development_code"]
-        row.expires_at = now() - timedelta(seconds=1)
-    expired = client.post(
-        "/api/v1/auth/otp/verifications",
-        json={"challenge_id": second["challenge_id"], "code": second["development_code"]},
-    )
-    assert expired.status_code == 410
-
-
-def test_otp_rate_limit_persists_across_challenges(client, monkeypatch):
-    monkeypatch.setattr(get_settings(), "otp_request_phone_limit", 2)
-    for _ in range(2):
-        assert (
-            client.post(
-                "/api/v1/auth/otp/challenges", json={"mobile_number": "+919876543210"}
-            ).status_code
-            == 201
-        )
-    response = client.post("/api/v1/auth/otp/challenges", json={"mobile_number": "+919876543210"})
-    assert response.status_code == 429
-    assert int(response.headers["retry-after"]) > 0
 
 
 @pytest.mark.parametrize(
@@ -188,7 +130,7 @@ def test_interaction_uniqueness_and_public_privacy(client, auth, flat_id):
     created = client.post(path, headers=auth, json=interaction_payload())
     assert created.status_code == 201
     assert created.json()["data"]["owner_name"] == "Owner Two"
-    assert not {"mobile_number", "author_id", "files"}.intersection(created.json()["data"])
+    assert not {"email", "mobile_number", "author_id", "files"}.intersection(created.json()["data"])
     assert (
         client.post(
             path, headers=auth, json=interaction_payload(owner_name="Different")
@@ -239,18 +181,10 @@ def test_deactivation_keeps_public_reviews_and_reactivation_reuses_account(clien
         assert client.get("/api/v1/me", headers=headers).status_code == 401
     assert client.get(f"/api/v1/tenant-reviews/{review['id']}").status_code == 200
     assert len(client.get(f"/api/v1/flats/{flat_id}/interactions").json()["data"]) == 1
-    c = client.post(
-        "/api/v1/auth/otp/challenges", json={"mobile_number": account["mobile_number"]}
-    ).json()["data"]
-    v = client.post(
-        "/api/v1/auth/otp/verifications",
-        json={"challenge_id": c["challenge_id"], "code": c["development_code"]},
-    ).json()["data"]
-    assert v["outcome"] == "reactivation_required" and "session" not in v
-    r = client.post(
-        "/api/v1/auth/reactivations",
-        json={"completion_token": v["completion_token"], "confirm": True},
-    )
+    credential = google_token(sub="sub-tenant", email="tenant@example.com")
+    v = client.post("/api/v1/auth/google", json={"credential": credential}).json()["data"]
+    assert v == {"outcome": "reactivation_required"}
+    r = client.post("/api/v1/auth/google", json={"credential": credential, "reactivate": True})
     assert r.json()["data"]["account"]["id"] == account["id"]
     assert client.get("/api/v1/me", headers=auth).status_code == 401
 
@@ -355,11 +289,17 @@ def test_pagination_scopes_and_invalid_bounds(client, auth, flat_id):
         assert client.get("/api/v1/locations", params={"bbox": bbox}).status_code == 400
 
 
-def test_production_rejects_development_sms_and_default_secret():
+def test_production_requires_private_secret_and_google():
     from app.config import Settings
 
+    strong = "x" * 40
     with pytest.raises(ValueError):
-        Settings(app_env="production", sms_backend="development")
+        Settings(
+            app_env="production", secret_key="short", google_client_ids="id.apps.googleusercontent.com"
+        )
+    with pytest.raises(ValueError):
+        Settings(app_env="production", secret_key=strong, google_client_ids="")
+    Settings(app_env="production", secret_key=strong, google_client_ids="id.apps.googleusercontent.com")
 
 
 def place_payload(**changes):

@@ -1,19 +1,18 @@
 import argparse
 from datetime import timedelta
 
-from sqlalchemy import exists, or_, select
+from sqlalchemy import exists, func, or_, select
 
 from .config import get_settings
 from .database import SessionLocal
 from .models import Attachment, File, Proof, ProofPolicy, User, now
-from .schemas import PhoneBody
 
 
 def main():
     parser = argparse.ArgumentParser()
     commands = parser.add_subparsers(dest="command", required=True)
-    admin = commands.add_parser("make-admin", help="Promote an existing OTP-verified account")
-    admin.add_argument("mobile_number")
+    admin = commands.add_parser("make-admin", help="Promote an account that signed in with Google")
+    admin.add_argument("email")
     policy = commands.add_parser("proof-policy")
     policy.add_argument("requirement", choices=["optional", "required"])
     commands.add_parser(
@@ -22,10 +21,17 @@ def main():
     args = parser.parse_args()
     with SessionLocal.begin() as db:
         if args.command == "make-admin":
-            phone = PhoneBody(mobile_number=args.mobile_number).mobile_number
-            user = db.scalar(select(User).where(User.mobile_number == phone).with_for_update())
-            if user is None:
-                parser.error("Sign in and register this mobile number first")
+            users = db.scalars(
+                select(User)
+                .where(User.google_subject.is_not(None))
+                .where(func.lower(User.email) == args.email.strip().lower())
+                .with_for_update()
+            ).all()
+            if not users:
+                parser.error("Sign in with this Google account first")
+            if len(users) > 1:
+                parser.error("Several accounts have used this email; promote by id in SQL")
+            user = users[0]
             user.role = "admin"
             print("Account promoted to administrator.")
         elif args.command == "proof-policy":

@@ -50,7 +50,8 @@ export type Stats = {
 };
 export type Account = {
   id: string;
-  mobile_number: string;
+  email: string | null;
+  google_linked?: boolean;
   role: "user" | "admin";
   status: string;
 };

@@ -21,9 +21,10 @@ def seed():
         policy = db.scalar(select(ProofPolicy).order_by(ProofPolicy.effective_from.desc()).limit(1))
         if policy is None:
             raise RuntimeError("Run alembic upgrade head first")
-        author = db.scalar(select(User).where(User.mobile_number == "+447700900001"))
+        author = db.get(User, seed_id("author"))
         if not author:
-            author = User(id=seed_id("author"), mobile_number="+447700900001")
+            # Fictional Google identity; nobody can sign in as it.
+            author = User(id=seed_id("author"), google_subject="demo-author")
             db.add(author)
             db.flush()
         examples = [

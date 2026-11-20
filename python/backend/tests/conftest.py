@@ -1,7 +1,13 @@
+import time
+from types import SimpleNamespace
+
+import jwt
 import pytest
+from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
+from app import google
 from app.config import get_settings
 from app.database import Base, SessionLocal, engine
 from app.main import app
@@ -14,11 +20,6 @@ def clean_database(tmp_path, monkeypatch):
     if settings.app_env != "test" or not engine.url.database.endswith("_test"):
         pytest.fail("Integration tests require APP_ENV=test and a database ending in _test")
     monkeypatch.setattr(settings, "upload_dir", tmp_path)
-    monkeypatch.setattr(settings, "otp_cooldown_seconds", 0)
-    monkeypatch.setattr(settings, "otp_request_phone_limit", 100)
-    monkeypatch.setattr(settings, "otp_request_ip_limit", 1000)
-    monkeypatch.setattr(settings, "otp_verify_phone_limit", 100)
-    monkeypatch.setattr(settings, "otp_verify_ip_limit", 1000)
     with engine.begin() as connection:
         tables = ", ".join(f'"{table.name}"' for table in Base.metadata.sorted_tables)
         connection.execute(text(f"TRUNCATE {tables} CASCADE"))
@@ -47,25 +48,42 @@ def flat_id():
         return str(flat.id)
 
 
-def sign_in(client, phone="+919876543210"):
-    challenge = client.post("/api/v1/auth/otp/challenges", json={"mobile_number": phone})
-    assert challenge.status_code == 201, challenge.text
-    challenge = challenge.json()["data"]
-    verification = client.post(
-        "/api/v1/auth/otp/verifications",
-        json={
-            "challenge_id": challenge["challenge_id"],
-            "code": challenge["development_code"],
-        },
+GOOGLE_CLIENT_ID = "test-client.apps.googleusercontent.com"
+GOOGLE_KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+
+
+@pytest.fixture(autouse=True)
+def google_enabled(monkeypatch):
+    monkeypatch.setattr(get_settings(), "google_client_ids", GOOGLE_CLIENT_ID)
+    # Stands in for Google's published keys; token decoding and claim checks stay real.
+    keys = SimpleNamespace(
+        get_signing_key_from_jwt=lambda token: SimpleNamespace(key=GOOGLE_KEY.public_key())
     )
-    assert verification.status_code == 200, verification.text
-    result = verification.json()["data"]
-    if result["outcome"] == "registration_required":
-        registration = client.post(
-            "/api/v1/auth/registrations", json={"completion_token": result["completion_token"]}
-        )
-        assert registration.status_code == 201, registration.text
-        result = registration.json()["data"]
+    monkeypatch.setattr(google, "_keys", keys)
+
+
+def google_token(key=GOOGLE_KEY, **changes):
+    claims = {
+        "iss": "https://accounts.google.com",
+        "aud": GOOGLE_CLIENT_ID,
+        "sub": "1234567890",
+        "email": "tenant@example.com",
+        "email_verified": True,
+        "iat": int(time.time()),
+        "exp": int(time.time()) + 600,
+        **changes,
+    }
+    return jwt.encode({k: v for k, v in claims.items() if v is not None}, key, algorithm="RS256")
+
+
+def sign_in(client, who="tenant"):
+    """Signs in as the Google account `who`, creating it the first time."""
+    response = client.post(
+        "/api/v1/auth/google",
+        json={"credential": google_token(sub=f"sub-{who}", email=f"{who}@example.com")},
+    )
+    assert response.status_code in (200, 201), response.text
+    result = response.json()["data"]
     return {"Authorization": f"Bearer {result['session']['token']}"}, result["account"]
 
 

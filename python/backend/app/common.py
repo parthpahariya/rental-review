@@ -28,7 +28,7 @@ def digest(value):
 
 
 def lock(db, value):
-    # Transaction-scoped PostgreSQL locks also cover absent phone/rate-limit rows.
+    # Transaction-scoped PostgreSQL locks also cover rows that don't exist yet.
     key = int.from_bytes(hashlib.sha256(value.encode()).digest()[:8], "big", signed=True)
     db.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": key})
 
@@ -79,8 +79,9 @@ def fields(row, names):
 
 def account_data(user):
     return fields(
-        user, "id mobile_number mobile_verified_at role status deactivated_at created_at updated_at"
-    )
+        user,
+        "id email role status deactivated_at created_at updated_at",
+    ) | {"google_linked": user.google_subject is not None}
 
 
 def own_review_data(db, review):

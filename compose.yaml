@@ -58,10 +58,7 @@ services:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-rental}:${POSTGRES_PASSWORD:-rental_local_only}@db:5432/${POSTGRES_DB:-rental_review}
       APP_ENV: ${APP_ENV:-development}
       SECRET_KEY: ${SECRET_KEY:-local-development-only-change-before-deployment}
-      SMS_BACKEND: ${SMS_BACKEND:-development}
-      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
-      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
-      TWILIO_FROM_NUMBER: ${TWILIO_FROM_NUMBER:-}
+      GOOGLE_CLIENT_IDS: ${GOOGLE_CLIENT_IDS:-}
       CORS_ORIGINS: http://localhost:${WEB_PORT:-8080},http://localhost:5173
       SEED_DEMO_DATA: ${SEED_DEMO_DATA:-true}
       UPLOAD_DIR: /app/uploads

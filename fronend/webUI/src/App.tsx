@@ -435,8 +435,8 @@ export default function App() {
             <div>
               <h2 id="cta-title">Rented before? Help the next tenant.</h2>
               <p>
-                It takes two minutes. Your review is public; your phone number
-                and documents never are.
+                It takes two minutes. Your review is public; your email and
+                documents never are.
               </p>
             </div>
             <div className="cta-actions">
@@ -976,8 +976,8 @@ export default function App() {
             <li>
               <strong>Add your own perspective.</strong>
               <p>
-                Sign in with your mobile number to share. Reviews are public,
-                while your number and supporting documents stay private.
+                Sign in with Google to share. Reviews are public, while your
+                email and supporting documents stay private.
               </p>
             </li>
           </ol>

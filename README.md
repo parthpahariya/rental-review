@@ -20,7 +20,7 @@ docker compose up --build -d --wait --wait-timeout 180
 
 The default setup seeds four **fictional** Bengaluru buildings, five flats, tenant reviews, and interactions. The interaction-only building appears in map results. Set `SEED_DEMO_DATA=false` for an empty database. Property provisioning is an operator task while its product workflow remains undecided; the demo seeder is an example.
 
-Sign in with a valid mobile number including its country code. In `SMS_BACKEND=development`, the randomly generated six-digit code appears in the sign-in dialog. Codes are never printed to server logs or stored as plaintext. First verification creates an account; later sign-ins reuse it. Development mode is for local use.
+Sign-in is **Google only**. Create an OAuth client ID of type "Web application" in Google Cloud Console (APIs & Services → Credentials), add every origin you open the site on (for example `http://localhost:8080` and `http://localhost:5173`) under *Authorized JavaScript origins*, and set `GOOGLE_CLIENT_IDS` in `.env`. Without it the sign-in dialog says Google sign-in is unavailable and nobody can sign in. The first Google sign-in creates an account; later sign-ins reuse it, keyed on Google's stable account id rather than the email.
 
 ```sh
 docker compose logs -f --tail=100
@@ -41,12 +41,12 @@ to stop watching; the stack keeps running.
 ## Included behavior
 
 - OpenStreetMap/Leaflet map with pan, zoom, keyboard markers, and an equivalent searchable property list. Select a building, then a flat; switch between Tenant Reviews and Interactions.
-- Phone-only OTP registration and sign-in; expiring, single-use codes; resend cooldown; PostgreSQL-backed phone/IP rate limits; hashed opaque sessions; sign-out; confirmed deactivation and reactivation.
+- Google sign-in (ID tokens verified server-side against Google's keys, audience, issuer, expiry, and verified email); PostgreSQL-backed per-IP rate limit; hashed opaque sessions; sign-out; confirmed deactivation and reactivation.
 - Owner names belong to individual reviews. Each tenant review includes rating, feedback, and immutable tenancy dates. A flat-row lock makes conflicting submissions by different tenants atomic. Adjacent tenancy periods and overlapping reviews by the same author are supported.
 - Authors can edit rating and feedback for 30 days. They can request deletion at any time; an admin must approve it. Approved deletion updates public views, rating aggregates, and tenancy availability atomically.
 - One interaction per author per flat, backed by a unique database constraint. Public reviews remain visible after account deactivation.
 - Private PDF/PNG/JPEG uploads, bounded to 5 MB, with signature checks. Optional tenancy proofs, versioned proof policy, and author-managed interaction attachments. Removal immediately denies file access and queues physical cleanup.
-- Account notebook for reviews, edits, attachments, deletion status, account deactivation, and an admin decision queue. Public responses exclude phone numbers, author IDs, and file metadata.
+- Account notebook for reviews, edits, attachments, deletion status, account deactivation, and an admin decision queue. Public responses exclude emails, author IDs, and file metadata.
 - Signed, filter-bound keyset pagination; validation and structured error responses; request IDs; health checks; Alembic migrations; idempotent demo seeding.
 
 ## Structure
@@ -96,7 +96,7 @@ python3 scripts/smoke.py http://localhost:8080
 make clean-test         # Removes only the isolated test project's containers/volumes
 ```
 
-Backend tests use real PostgreSQL and include concurrent overlapping submissions, duplicate interactions, OTP single use/replacement/rate limits, account lifecycle, edit deadlines, deletion approval, file access, proof policy, pagination, and validation. The test fixture refuses to truncate data unless `APP_ENV=test` and the database name ends in `_test`. Frontend tests cover flat/tab navigation, search states, development OTP registration, and failed retrieval.
+Backend tests use real PostgreSQL and include concurrent overlapping submissions, duplicate interactions, Google token verification (signed with a test key), account lifecycle, edit deadlines, deletion approval, file access, proof policy, pagination, and validation. The test fixture refuses to truncate data unless `APP_ENV=test` and the database name ends in `_test`. Frontend tests cover flat/tab navigation, search states, Google sign-in, and failed retrieval.
 
 For direct API development: use Python 3.12+, install `python/backend/requirements-dev.txt` into a virtual environment, set `DATABASE_URL` to a local PostgreSQL instance, and run `alembic upgrade head` followed by `uvicorn app.main:app --reload` from `python/backend`. Run `npm ci && npm run dev` from `fronend/webUI`; Vite proxies `/api` to `127.0.0.1:8000`.
 
@@ -123,8 +123,8 @@ The checked-in SSH script validates its inputs and requires pinned host keys. A 
 
 ## Configuration and working-model boundaries
 
-`.env.example` lists the Compose settings. OTP defaults are a five-minute expiry, 60-second resend cooldown, five wrong attempts per challenge, and hourly phone/IP limits; these are backend `Settings` fields and can be overridden in backend environment configuration. Browser sessions use `sessionStorage`; closing the tab clears its credential. Public map tiles and optional Google Fonts need an internet connection; the accessible property list and system font fallback still work without them.
+`.env.example` lists the Compose settings. Google sign-in allows 100 attempts per client IP per hour (`GOOGLE_SIGN_IN_IP_LIMIT`); it is a backend `Settings` field and can be overridden in backend environment configuration. Browser sessions use `sessionStorage`; closing the tab clears its credential. Public map tiles and optional Google Fonts need an internet connection; the accessible property list and system font fallback still work without them.
 
-For real SMS, set `SMS_BACKEND=twilio`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, and `TWILIO_FROM_NUMBER`. Before deployment, use `APP_ENV=production`, a random `SECRET_KEY` of at least 32 characters, a unique URL-safe PostgreSQL password, and `SEED_DEMO_DATA=false`. Production startup rejects development SMS or the development secret. Backend rate limits use the actual peer IP, so Nginx clients share an IP bucket; add a trusted-proxy/IP strategy before serving substantial public traffic.
+Before deployment, use `APP_ENV=production`, a random `SECRET_KEY` of at least 32 characters, `GOOGLE_CLIENT_IDS` with the production origin authorized, a unique URL-safe PostgreSQL password, and `SEED_DEMO_DATA=false`. Production startup rejects the development secret or a missing Google client ID. The backend must reach `www.googleapis.com` to fetch Google's signing keys. Backend rate limits use the actual peer IP, so Nginx clients share an IP bucket; add a trusted-proxy/IP strategy before serving substantial public traffic.
 
 Files are synchronously signature-checked and can return `ready` immediately from the `202` upload response; asynchronous ingestion and malware scanning are not included. Storage is a private Docker volume rather than object storage. Location/flat creation, arbitrary-point nearby search, interaction text editing/deletion, and retention of old authentication/audit rows remain deferred product decisions. These choices and defaults make the existing [requirements](REQUIREMENTS.md), [API proposal](API_CONTRACTS.md), and [database proposal](DATABASE_MODEL.md) runnable; those documents remain the design reference. The running [OpenAPI schema](http://localhost:8000/api/openapi.json) is the authoritative implemented API.

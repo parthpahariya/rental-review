@@ -31,9 +31,15 @@ class Timestamps:
 
 
 class User(Identity, Timestamps, Base):
+    """An account signs in with Google. The mobile columns are kept read-only for
+    accounts created before phone sign-in was removed; nothing sets them any more."""
+
     __tablename__ = "users"
-    mobile_number: Mapped[str] = mapped_column(String(20), unique=True)
-    mobile_verified_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    mobile_number: Mapped[str | None] = mapped_column(String(20), unique=True)
+    mobile_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Google's stable account id ("sub"); emails can change, this never does.
+    google_subject: Mapped[str | None] = mapped_column(String(255), unique=True)
+    email: Mapped[str | None] = mapped_column(String(320))
     role: Mapped[str] = mapped_column(String(10), default="user")
     status: Mapped[str] = mapped_column(String(10), default="active")
     deactivated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -41,6 +47,14 @@ class User(Identity, Timestamps, Base):
         CheckConstraint("role IN ('user', 'admin')"),
         CheckConstraint("status IN ('active', 'inactive')"),
         CheckConstraint("(status = 'inactive') = (deactivated_at IS NOT NULL)"),
+        CheckConstraint(
+            "mobile_number IS NOT NULL OR google_subject IS NOT NULL",
+            name="ck_users_sign_in_method",
+        ),
+        CheckConstraint(
+            "(mobile_number IS NULL) = (mobile_verified_at IS NULL)",
+            name="ck_users_mobile_verified",
+        ),
     )
 
 
@@ -51,23 +65,6 @@ class Session(Identity, Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-
-
-class OtpChallenge(Identity, Base):
-    __tablename__ = "otp_challenges"
-    mobile_number: Mapped[str] = mapped_column(String(20), index=True)
-    code_digest: Mapped[str] = mapped_column(String(64))
-    delivery_status: Mapped[str] = mapped_column(String(10), default="sent")
-    attempt_count: Mapped[int] = mapped_column(default=0)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
-    resend_available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    invalidated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    completion_token_digest: Mapped[str | None] = mapped_column(String(64), unique=True)
-    completion_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    completion_action: Mapped[str | None] = mapped_column(String(20))
-    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class RateLimit(Base):

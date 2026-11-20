@@ -8,7 +8,7 @@ Proposed REST/JSON contracts based on [REQUIREMENTS.md](REQUIREMENTS.md) and [DA
 - Use HTTPS. Requests and responses use `application/json`, except multipart file uploads and file downloads.
 - JSON field names use `snake_case`. IDs are UUID strings; timestamps are RFC 3339 UTC strings, such as `2026-10-06T12:00:00Z`; dates are `YYYY-MM-DD`.
 - Required fields cannot be null. Optional request fields may be omitted; null is accepted only where explicitly stated. Reject unknown body fields with `422 VALIDATION_ERROR`, including attempts to set author IDs, roles, timestamps, or deletion state.
-- Nonblank strings must contain a non-whitespace character. Validate phone numbers before normalizing to E.164. Ratings must be integers from 1 through 5.
+- Nonblank strings must contain a non-whitespace character. Ratings must be integers from 1 through 5.
 - Single-resource success bodies use `{ "data": <resource> }`. Lists use `{ "data": [<resource>], "page": { "next_cursor": <string|null> } }`. `204` responses have no body.
 - List endpoints accept optional `limit` (integer, proposed default `20`, range `1–100`) and `cursor` (opaque string). An invalid cursor or one reused with different filters produces `400 INVALID_CURSOR`.
 - Reviews, interactions, and deletion requests sort by `(submitted_at DESC, id DESC)`; other collections sort by `id ASC`. Cursors preserve these orderings. An empty collection returns `200`, an empty array, and a null cursor. Pagination is not a frozen snapshot; visibility and authorization are checked on every page.
@@ -18,7 +18,7 @@ Proposed REST/JSON contracts based on [REQUIREMENTS.md](REQUIREMENTS.md) and [DA
 
 ### Authentication and authorization
 
-Proposed transport: `Authorization: Bearer <opaque_session_token>`. Persist only the token digest on the server. Session tokens and OTP continuation tokens are separate credential types; a continuation token cannot access authenticated endpoints. Browser credential storage/transport must be finalized when the application stack is chosen.
+Proposed transport: `Authorization: Bearer <opaque_session_token>`. Persist only the token digest on the server. Sessions are created only by Google sign-in (`POST /auth/google`); Google ID tokens are accepted solely by that endpoint and never as session credentials. Browser credential storage/transport must be finalized when the application stack is chosen.
 
 | Access label | Requirement |
 | --- | --- |
@@ -27,7 +27,6 @@ Proposed transport: `Authorization: Bearer <opaque_session_token>`. Persist only
 | Author | Active user who authored the target review or interaction |
 | Uploader | Active user who uploaded the target file |
 | Admin | Active user with server-assigned `admin` role |
-| Continuation | Valid, unexpired, unused OTP continuation token for the stated action |
 
 Protected endpoints return `401 UNAUTHENTICATED` for missing, expired, or revoked sessions. An otherwise valid session whose account is inactive returns `403 ACCOUNT_INACTIVE`; normal deactivation revokes sessions and therefore normally yields `401`. Insufficient permissions on a public resource return `403 FORBIDDEN`. Private resources return `404 NOT_FOUND` to callers outside their authorized scope. Admin routes return `403` to authenticated non-admin users before resource lookup.
 
@@ -46,22 +45,21 @@ Protected endpoints return `401 UNAUTHENTICATED` for missing, expired, or revoke
 }
 ```
 
-`code`, `message`, `fields`, and `request_id` are always present; `fields` is empty when the error is not field-specific. Clients branch on stable codes, not message wording. `429` errors also include `error.retry_after_seconds` and the matching `Retry-After` header. Delivery errors may include `retry_after_seconds` to identify the next allowed retry.
+`code`, `message`, `fields`, and `request_id` are always present; `fields` is empty when the error is not field-specific. Clients branch on stable codes, not message wording. `429` errors also include `error.retry_after_seconds` and the matching `Retry-After` header.
 
 | HTTP status | Common codes |
 | --- | --- |
 | `400` | `MALFORMED_REQUEST`, `INVALID_CURSOR`, `INVALID_BOUNDS` |
-| `401` | `UNAUTHENTICATED`, `OTP_INVALID`, `COMPLETION_TOKEN_INVALID`, `COMPLETION_TOKEN_EXPIRED` |
+| `401` | `UNAUTHENTICATED`, `GOOGLE_TOKEN_INVALID`, `GOOGLE_EMAIL_UNVERIFIED` |
 | `403` | `FORBIDDEN`, `ACCOUNT_INACTIVE`, `EDIT_WINDOW_CLOSED` |
-| `404` | `NOT_FOUND` |
+| `404` | `NOT_FOUND`, `GOOGLE_SIGN_IN_DISABLED` |
 | `405` | `METHOD_NOT_ALLOWED` (include the route's `Allow` header) |
-| `409` | `INTERACTION_REVIEW_ALREADY_EXISTS`, `LOCATION_ALREADY_EXISTS`, `FLAT_ALREADY_EXISTS`, `TENANCY_PERIOD_CONFLICT`, `OTP_ALREADY_USED`, `OTP_REPLACED`, `COMPLETION_TOKEN_USED`, `ACCOUNT_ALREADY_EXISTS`, `AUTH_FLOW_CHANGED`, `FILE_NOT_READY`, `FILE_ALREADY_ATTACHED`, `FILE_UNAVAILABLE`, `REQUEST_ALREADY_PENDING`, `REQUEST_ALREADY_DECIDED` |
-| `410` | `OTP_EXPIRED` |
+| `409` | `INTERACTION_REVIEW_ALREADY_EXISTS`, `LOCATION_ALREADY_EXISTS`, `FLAT_ALREADY_EXISTS`, `TENANCY_PERIOD_CONFLICT`, `FILE_NOT_READY`, `FILE_ALREADY_ATTACHED`, `FILE_UNAVAILABLE`, `REQUEST_ALREADY_PENDING`, `REQUEST_ALREADY_DECIDED` |
 | `413` | `FILE_TOO_LARGE` |
 | `415` | `UNSUPPORTED_MEDIA_TYPE` |
 | `422` | `VALIDATION_ERROR`, `PROOF_REQUIRED`, `FILE_PURPOSE_MISMATCH`, `CONFIRMATION_REQUIRED` |
-| `429` | `OTP_REQUEST_LIMITED`, `OTP_VERIFICATION_LIMITED`, `OTP_RESEND_COOLDOWN` |
-| `503` | `SMS_DELIVERY_FAILED`, `SERVICE_UNAVAILABLE` |
+| `429` | `GOOGLE_SIGN_IN_LIMITED`, `RATE_LIMITED` |
+| `503` | `GOOGLE_UNAVAILABLE`, `SERVICE_UNAVAILABLE` |
 
 Unexpected failures use `500 INTERNAL_ERROR` with no stack traces or private data. Unknown resources return `404`; known but empty collections return `200`. Common validation/authentication errors apply to every endpoint in addition to its explicitly listed errors.
 
@@ -71,7 +69,7 @@ Fields below are exhaustive for each response shape. All fields are present unle
 
 | Shape | Fields |
 | --- | --- |
-| `Account` (private) | `id: UUID`, `mobile_number: string`, `mobile_verified_at: timestamp`, `role: user\|admin`, `status: active\|inactive`, `deactivated_at: timestamp\|null`, `created_at: timestamp`, `updated_at: timestamp` |
+| `Account` (private) | `id: UUID`, `email: string\|null`, `google_linked: boolean`, `role: user\|admin`, `status: active\|inactive`, `deactivated_at: timestamp\|null`, `created_at: timestamp`, `updated_at: timestamp` |
 | `Session` (private) | `token: string`, `token_type: "Bearer"`, `expires_at: timestamp`; raw token returned only when issuing a session |
 | `Location` | `id: UUID`, `address: string`, `building_name: string\|null`, `latitude: number`, `longitude: number` |
 | `ReviewSummary` | `tenant_review_count: integer`, `interaction_review_count: integer`, `average_rating: number\|null` |
@@ -88,74 +86,28 @@ Fields below are exhaustive for each response shape. All fields are present unle
 
 `owner_name` is the nonblank name supplied by the author and stored on that review. Both submission forms require it, and both public review types display it. Flats have no owner field or owner association. Names do not identify a shared owner resource or link reviews across flats.
 
-Public shapes exclude author account IDs, mobile numbers, account status, proof metadata, file metadata/URLs, and deletion-request details. Supporting-file downloads remain author-only until their visibility policy is decided. `average_rating` uses only visible tenant reviews, rounded to two decimal places; it is null when the tenant review count is zero. Counts never depend on author account status.
+Public shapes exclude author account IDs, emails, account status, proof metadata, file metadata/URLs, and deletion-request details. Supporting-file downloads remain author-only until their visibility policy is decided. `average_rating` uses only visible tenant reviews, rounded to two decimal places; it is null when the tenant review count is zero. Counts never depend on author account status.
 
-## OTP registration, sign-in, and reactivation
+## Google sign-in
 
-### `POST /auth/otp/challenges` — Public
+Google is the only way to sign in; there is no password or phone sign-in. Accounts are keyed on Google's stable account id (`sub`), not the email. The email is private: it appears only in `Account`, never in public shapes. Accounts created before phone sign-in was removed keep their reviews but can no longer sign in, and their sessions were revoked.
 
-Request:
+### `GET /auth/providers` — Public
 
-```json
-{ "mobile_number": "+919876543210" }
-```
+`200`: `{ "data": { "google_client_id": string|null } }`. Null when the server has no `GOOGLE_CLIENT_IDS` configured; clients then hide the Google button.
 
-`201` response:
+### `POST /auth/google` — Public
 
-```json
-{
-  "data": {
-    "challenge_id": "11111111-1111-4111-8111-111111111111",
-    "delivery_status": "pending",
-    "expires_at": "2026-10-06T12:05:00Z",
-    "resend_available_at": "2026-10-06T12:01:00Z"
-  }
-}
-```
+Request: `{ "credential": string, "reactivate": boolean = false }`, where `credential` is the ID token returned by Google Identity Services. The server verifies its RS256 signature against Google's published keys, `aud` ∈ configured client ids, `iss` ∈ {`accounts.google.com`, `https://accounts.google.com`}, expiry, and `email_verified: true`. Accounts are keyed on the token's `sub`; `email` is refreshed on every sign-in.
 
-The timestamps are illustrative, not chosen product defaults. `delivery_status` is `pending` or `sent` on success; `sent` means accepted by the SMS provider, not guaranteed receipt. `Location` points to `/api/v1/auth/otp/challenges/{challenge_id}`.
-
-Repeat this endpoint with the same phone number to resend after the cooldown. Accepted replacement issuance atomically invalidates all preceding usable challenges for that number. Invalid requests or rate-limited requests do not invalidate existing challenges. An accepted replacement remains the replacement even if its SMS delivery later fails; prior codes do not become valid again.
-
-No response indicates whether the account exists before successful verification. Enforce shared phone/IP request and verification limits across challenges. Errors: `422 VALIDATION_ERROR`, `429 OTP_REQUEST_LIMITED`, `429 OTP_RESEND_COOLDOWN`, `503 SMS_DELIVERY_FAILED`. Immediate SMS failure returns the common error with the earliest allowed retry delay and retains delivery failure internally; clients can request a new challenge after that delay.
-
-### `GET /auth/otp/challenges/{challenge_id}` — Public, possession of random challenge ID
-
-`200`: `{ "data": { "challenge_id": UUID, "delivery_status": "pending|sent|failed", "expires_at": timestamp, "resend_available_at": timestamp, "failure_code": "SMS_DELIVERY_FAILED"|null } }`.
-
-This poll endpoint reports asynchronous delivery failure and supports retry UI. It reveals no phone number, OTP, account existence, provider reference, or raw provider error. Unknown challenges return `404`. Apply abuse limits to polling; throttling returns `429 OTP_REQUEST_LIMITED`.
-
-### `POST /auth/otp/verifications` — Public
-
-Request: `{ "challenge_id": UUID, "code": string }`. Keep the code as a string so leading zeroes survive. Its format follows configured OTP policy.
-
-`200` returns exactly one of these `data` variants:
-
-| `outcome` | Additional fields | Behavior |
+| Result | Status | Body `data` |
 | --- | --- | --- |
-| `signed_in` | `account: Account`, `session: Session` | Active registered user signs in to the existing account |
-| `registration_required` | `completion_token: string`, `completion_expires_at: timestamp` | New number must complete registration |
-| `reactivation_required` | `completion_token: string`, `completion_expires_at: timestamp` | Existing inactive account requires explicit reactivation; no session is issued yet |
+| New Google account | `201` | `{ outcome: "registered", account, session }` |
+| Existing active account | `200` | `{ outcome: "signed_in", account, session }` |
+| Inactive account, `reactivate` false | `200` | `{ outcome: "reactivation_required" }` — resend the same credential with `reactivate: true` after the user confirms |
+| Inactive account, `reactivate` true | `200` | `{ outcome: "reactivated", account, session }` |
 
-Consume a successful OTP atomically. A continuation token is bound to the verified number and the returned action, short-lived, and single-use. Wrong codes increment attempts atomically. Errors: `401 OTP_INVALID`, `410 OTP_EXPIRED`, `409 OTP_ALREADY_USED`, `409 OTP_REPLACED`, `429 OTP_VERIFICATION_LIMITED`. An unknown challenge returns `401 OTP_INVALID`. None of these failures issues a session or creates an account.
-
-### `POST /auth/registrations` — Continuation for registration
-
-Request: `{ "completion_token": string }`.
-
-`201`: `{ "data": { "account": Account, "session": Session } }`; `Location: /api/v1/me`.
-
-Create the account only after valid phone verification, using the verified number from the continuation token, and consume the token atomically with account/session creation. Client-supplied mobile number, role, or status is not accepted. No additional registration fields are defined until the requirements resolve them; this is a provisional phone-only registration contract.
-
-Errors: `401 COMPLETION_TOKEN_INVALID`, `401 COMPLETION_TOKEN_EXPIRED`, `409 COMPLETION_TOKEN_USED`. If a concurrent registration already created that number, return `409 ACCOUNT_ALREADY_EXISTS` and require a fresh OTP sign-in; never create a duplicate account or issue a session through the conflicting registration.
-
-### `POST /auth/reactivations` — Continuation for reactivation
-
-Request: `{ "completion_token": string, "confirm": true }`.
-
-`200`: `{ "data": { "account": Account, "session": Session } }`.
-
-Restore the same inactive account and create a new session atomically with token consumption. Previously revoked sessions remain revoked. Original review submission times and editing deadlines remain unchanged. Errors: continuation-token errors above, `422 CONFIRMATION_REQUIRED`, and `409 AUTH_FLOW_CHANGED` if another operation already reactivated the account; obtain a new OTP to sign in.
+Errors: `401 GOOGLE_TOKEN_INVALID`, `401 GOOGLE_EMAIL_UNVERIFIED`, `404 GOOGLE_SIGN_IN_DISABLED`, `429 GOOGLE_SIGN_IN_LIMITED` (per client IP per hour, `GOOGLE_SIGN_IN_IP_LIMIT`), `503 GOOGLE_UNAVAILABLE` (Google's keys could not be fetched).
 
 ### `DELETE /auth/session` — Active user
 
@@ -391,7 +343,7 @@ Requests remain retrievable after approval and after account reactivation. Inact
 | `GET /admin/deletion-requests` | `status=pending|approved|rejected|all`, default `pending`, plus pagination | List of `AdminDeletionRequest` |
 | `GET /admin/deletion-requests/{request_id}` | None | Single `AdminDeletionRequest` |
 
-The admin response includes the review needed to assess the request without exposing the author's phone number or proof files. Existing pending requests can be decided even if their author has since deactivated.
+The admin response includes the review needed to assess the request without exposing the author's email or proof files. Existing pending requests can be decided even if their author has since deactivated.
 
 ### `POST /admin/deletion-requests/{request_id}/decision` — Admin
 
@@ -413,10 +365,9 @@ These scenarios define acceptance expectations for a future implementation; they
 
 | Scenario | Expected result |
 | --- | --- |
-| Existing active phone completes OTP | Existing account and new session; no duplicate account |
-| Replacement code requested | Prior usable OTP invalidated; shared request/verification limits persist |
-| OTP reused or verification races | At most one success; subsequent use fails clearly |
-| Inactive phone completes OTP | Reactivation continuation; no session until confirmation |
+| Existing Google account signs in again | Same account and a new session; no duplicate account, even on concurrent first sign-ins |
+| Token for another app, wrong issuer, expired, badly signed, or with unverified email | `401`; no account or session created |
+| Inactive Google account signs in | `reactivation_required`; no session until the user confirms with `reactivate: true` |
 | Account deactivated with multiple sessions | All sessions revoked; public reviews and interactions unchanged |
 | Optional/mandatory proof | Empty proof array succeeds under optional policy and fails atomically under mandatory policy |
 | Review edited at exactly 30 days | `403 EDIT_WINDOW_CLOSED`; earlier edits/reactivation never shift deadline |
@@ -444,18 +395,18 @@ These scenarios define acceptance expectations for a future implementation; they
 | Supporting attachment removed | File unavailable immediately; interaction text remains public |
 | Deletion request pending/rejected | Review and rating stay public |
 | Deletion approved | Review/rating removed from public detail, lists, map counts, and aggregates atomically |
-| Anonymous public reads | Never return mobile numbers, proofs, author account data, or private attachment metadata |
+| Anonymous public reads | Never return emails, proofs, author account data, or private attachment metadata |
 
 ## Coverage and deferred decisions
 
 | Requirement | Contract area |
 | --- | --- |
-| FR-01 | OTP issuance/status/verification, registration, sessions |
-| FR-02 | Deactivation preview/action, OTP reactivation, preserved public visibility |
+| FR-01 | Google sign-in, account creation, sessions |
+| FR-02 | Deactivation preview/action, Google reactivation, preserved public visibility |
 | FR-04 | Tenant review submission/retrieval/editing, tenancy-period conflict validation, proof policy and private files |
 | FR-05 | Location viewport/text search, location/flat navigation, both feedback collections |
 | FR-06 | Public interactions with one review per user per flat, private uploads and author attachment management |
 | FR-07 | Separate flat-scoped tenant-review and interaction endpoints |
 | FR-08 | Author deletion requests/status and admin queue/decisions |
 
-Before implementation, resolve extra registration fields; SMS provider, supported countries, expiry/cooldown/limits; location/flat provisioning and deduplication; interaction editing/deletion/linking; arbitrary-point nearby search and radius; map provider/coverage; file limits and supporting-file visibility; data retention; and final browser session transport. Generic pagination defaults, transport, substring search, and error conventions above are proposed API choices, not previously approved product decisions. No public property-creation workflow, proof-review workflow, or interaction-deletion approval process is implied.
+Before implementation, resolve extra registration fields; location/flat provisioning and deduplication; interaction editing/deletion/linking; arbitrary-point nearby search and radius; map provider/coverage; file limits and supporting-file visibility; data retention; and final browser session transport. Generic pagination defaults, transport, substring search, and error conventions above are proposed API choices, not previously approved product decisions. No public property-creation workflow, proof-review workflow, or interaction-deletion approval process is implied.

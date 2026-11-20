@@ -9,7 +9,7 @@ This logical relational model implements [REQUIREMENTS.md](REQUIREMENTS.md). It 
 - Fields are required unless marked nullable. `created_at` defaults to the creation instant; `updated_at` changes when a record is modified.
 - Foreign keys restrict physical deletion by default. Deactivation and approved review deletion preserve records and audit history.
 - Text described as nonblank must contain at least one non-whitespace character.
-- Phone numbers are normalized to E.164 before storage and uniqueness checks. Account and authentication tables are private.
+- Accounts are identified by Google's stable account id. Account and authentication tables are private.
 - Files live in private object storage; the database stores metadata and opaque storage keys, never file contents or permanent public URLs.
 
 ## Relationships
@@ -32,7 +32,7 @@ erDiagram
     TENANT_REVIEWS ||--o{ REVIEW_DELETION_REQUESTS : subject_of
 ```
 
-OTP challenges and rate-limit buckets also support users who have not registered, so neither requires a user foreign key.
+Rate-limit buckets also cover people who have not signed in yet, so they have no user foreign key.
 
 ## Account and authentication tables
 
@@ -41,54 +41,31 @@ OTP challenges and rate-limit buckets also support users who have not registered
 | Field | Type | Rules |
 | --- | --- | --- |
 | `id` | UUID | Primary key |
-| `mobile_number` | string | Unique normalized E.164 number; private |
-| `mobile_verified_at` | timestamp | Set from successful OTP verification before account creation |
+| `google_subject` | string, nullable | Unique Google account id (`sub`); how accounts sign in |
+| `email` | string, nullable | Google account email, refreshed on each sign-in; private |
+| `mobile_number` | string, nullable | Legacy: unique E.164 number from removed phone sign-in; private, never set for new accounts |
+| `mobile_verified_at` | timestamp, nullable | Legacy: set exactly when `mobile_number` is set |
 | `role` | enum | `user` or `admin`; default `user` |
 | `status` | enum | `active` or `inactive`; default `active` |
 | `deactivated_at` | timestamp, nullable | Required exactly when status is `inactive` |
 | `created_at` | timestamp | Account creation timestamp |
 | `updated_at` | timestamp | Last account modification timestamp |
 
-Tenants and users recording interactions share the same account type; submitting a tenant review does not require a separate role. Additional registration fields are deferred until the corresponding product decision is made. Admin role assignment is privileged and unavailable through self-registration.
-
-### `otp_challenges`
-
-| Field | Type | Rules |
-| --- | --- | --- |
-| `id` | UUID | Primary key; random challenge identifier |
-| `mobile_number` | string | Normalized E.164 number; private |
-| `code_digest` | string | Keyed digest of challenge ID and code; secret key held outside the database |
-| `delivery_status` | enum | `pending`, `sent`, or `failed` |
-| `provider_message_id` | string, nullable | Private SMS provider reference |
-| `failure_code` | string, nullable | Sanitized delivery error code; no OTP or message body |
-| `attempt_count` | integer | Default `0`; nonnegative |
-| `max_attempts` | integer | Positive; snapshot of configured verification limit |
-| `created_at` | timestamp | OTP challenge creation timestamp |
-| `expires_at` | timestamp | OTP challenge expiry; must be later than `created_at` |
-| `resend_available_at` | timestamp | Earliest replacement request allowed by cooldown |
-| `consumed_at` | timestamp, nullable | Set atomically on successful verification |
-| `invalidated_at` | timestamp, nullable | Set when replaced or otherwise revoked |
-| `completion_token_digest` | string, nullable | Unique digest of a short-lived continuation token after successful verification |
-| `completion_expires_at` | timestamp, nullable | Expiry of the continuation token |
-| `completed_at` | timestamp, nullable | Set when verification is used to finish sign-in, registration, or reactivation |
-
-Never persist or log plaintext OTPs. A keyed digest protects low-entropy codes against offline enumeration from a database-only compromise. Verification must check expiry, invalidation, consumption, and attempt limits and atomically increment failed attempts or consume a valid code. Serialize issuance per phone number so replacement invalidates all preceding usable challenges, including under concurrent requests.
-
-A successful verification can finish sign-in immediately or issue a short-lived, single-use continuation token for missing registration details or explicit reactivation confirmation. Store its digest and expiry together. Completion must atomically check and consume that token; it must not reuse the OTP. Failed delivery supports a fresh request within cooldown and rate limits. Expiry, cooldown, and attempt settings are deployment configuration, with no product values assumed here.
+Every account has a `google_subject` or a legacy `mobile_number` (database check). Tenants and users recording interactions share the same account type; submitting a tenant review does not require a separate role. Additional registration fields are deferred until the corresponding product decision is made. Admin role assignment is privileged and unavailable through self-registration.
 
 ### `auth_rate_limits`
 
 | Field | Type | Rules |
 | --- | --- | --- |
-| `action` | enum | `otp_request` or `otp_verify` |
-| `subject_kind` | enum | `mobile` or `ip` |
-| `subject_digest` | string | Keyed digest of normalized phone number or IP address |
+| `action` | enum | e.g. `google` (sign-in attempts) |
+| `subject_kind` | enum | `ip` |
+| `subject_digest` | string | Keyed digest of the client IP address |
 | `window_started_at` | timestamp | Beginning of configured counting window |
 | `window_ends_at` | timestamp | Later than window start |
 | `attempt_count` | integer | Nonnegative; increment atomically |
 | `blocked_until` | timestamp, nullable | Optional temporary block |
 
-Composite primary key: `(action, subject_kind, subject_digest, window_started_at)`. Enforce request and verification limits across challenges so requesting replacement codes cannot reset them. Limits and window durations remain configurable. An equivalent atomic shared rate-limit store may replace this table once infrastructure is chosen.
+Composite primary key: `(action, subject_kind, subject_digest, window_started_at)`. Limits and window durations remain configurable. An equivalent atomic shared rate-limit store may replace this table once infrastructure is chosen.
 
 ### `sessions`
 
@@ -101,7 +78,7 @@ Composite primary key: `(action, subject_kind, subject_digest, window_started_at
 | `expires_at` | timestamp | Session expiry; must be later than `created_at` |
 | `revoked_at` | timestamp, nullable | Non-null sessions cannot authorize access |
 
-Deactivation updates the account and revokes all sessions in one transaction. Authenticated writes must also check current account status. Reactivation requires verified possession of the registered number and explicit confirmation, restores the existing account, and creates a new session; old sessions remain revoked. The unique phone constraint prevents duplicate accounts, including concurrent registration attempts.
+Deactivation updates the account and revokes all sessions in one transaction. Authenticated writes must also check current account status. Reactivation requires signing in with the same Google account and explicit confirmation, restores the existing account, and creates a new session; old sessions remain revoked. The unique `google_subject` constraint, plus a per-subject lock, prevents duplicate accounts, including concurrent first sign-ins.
 
 ## Property tables
 
@@ -258,8 +235,8 @@ Use database constraints for primary keys, foreign keys, uniqueness, enums, rati
 
 Required transactional operations:
 
-1. **OTP issuance and verification:** enforce shared limits and cooldowns, invalidate replaced challenges, and atomically consume successful codes and continuation tokens. SMS delivery occurs outside the transaction with persisted delivery outcomes.
-2. **Account lifecycle:** complete verified registration with unique-phone conflict handling; revoke sessions on deactivation; reactivate the original account only after confirmation. Serialize lifecycle changes and authenticated writes so an inactive account cannot continue writing with an old session.
+1. **Google sign-in:** verify the ID token before touching the database, count the attempt against the IP limit even when verification fails, and create or find the account by `google_subject` under a per-subject lock.
+2. **Account lifecycle:** create accounts with unique-Google-id conflict handling; revoke sessions on deactivation; reactivate the original account only after confirmation. Serialize lifecycle changes and authenticated writes so an inactive account cannot continue writing with an old session.
 3. **Review submission:** verify active author, validate the flat, nonblank owner name, and tenancy dates, lock the flat and reject overlaps with another author's non-deleted tenant reviews, select the effective proof policy, validate files, and insert the review and any proof associations together. Interaction submission likewise validates the flat and owner name and atomically inserts the interaction and any supporting attachments, enforcing unique `(author_id, flat_id)`. Translate a violation of this constraint into the duplicate-interaction conflict response and roll back the submission so no new review or attachment links remain; a preliminary existence check alone is insufficient. Do not trust a client-supplied policy version.
 4. **Review edit:** enforce author identity, current active status, visibility, and `current_time < submitted_at + 30 days` within the write operation, not just in the UI.
 5. **File attachment/removal:** check account status, review authorship, file ownership, purpose, and lifecycle state. Recheck authorization when a completed upload becomes attached.
@@ -273,9 +250,7 @@ In addition to primary-key and unique indexes, add indexes on foreign keys used 
 
 | Query | Index or retrieval rule |
 | --- | --- |
-| Sign-in and reactivation | Unique `users(mobile_number)` |
-| Latest phone challenge | `otp_challenges(mobile_number, created_at)` |
-| OTP and continuation cleanup | `otp_challenges(expires_at)` and `completion_expires_at` |
+| Sign-in and reactivation | Unique `users(google_subject)` |
 | Expired rate-limit cleanup | `auth_rate_limits(window_ends_at)` |
 | Revoke account sessions | `sessions(user_id, revoked_at)`; expiry cleanup on `expires_at` |
 | Flats at a marker | `flats(location_id)` |
@@ -299,8 +274,8 @@ Public retrieval never filters by author account status. Use stable pagination o
 
 | Requirement | Model support |
 | --- | --- |
-| FR-01: Registration and OTP sign-in | `users`, `otp_challenges`, `auth_rate_limits`, `sessions` |
-| FR-02: Deactivation and reactivation | Account status, session revocation, unique phone identity, author-independent public visibility |
+| FR-01: Google sign-in | `users`, `auth_rate_limits`, `sessions` |
+| FR-02: Deactivation and reactivation | Account status, session revocation, unique Google identity, author-independent public visibility |
 | FR-04: Tenant reviews | `tenant_reviews`, tenancy periods with atomic conflict checks across different authors per flat, versioned proof policies, private proofs, immutable submission time and derived editing deadline |
 | FR-05: Map search | `locations`, `flats`, visibility union across both review types |
 | FR-06: Public interactions | `interaction_reviews` with unique `(author_id, flat_id)`, `files`, `interaction_attachments`, separate public projection |
@@ -309,6 +284,6 @@ Public retrieval never filters by author account status. Use stable pagination o
 
 ## Decisions still needed
 
-The unresolved decisions in `REQUIREMENTS.md` remain open: extra registration fields; SMS provider, countries, expiry, cooldown, and limits; interaction edit/delete/link behavior; location/flat creation and deduplication; nearby-search behavior; and map provider/coverage.
+The unresolved decisions in `REQUIREMENTS.md` remain open: extra registration fields; interaction edit/delete/link behavior; location/flat creation and deduplication; nearby-search behavior; and map provider/coverage.
 
 Implementation must also select a database/ORM, define file size/type and supporting-file access policies, and set retention periods for authentication data, detached uploads, and private audit records. The model does not introduce tenancy-proof verification, mandatory proof by default, review pre-approval, or a one-review-per-flat limit.

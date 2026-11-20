@@ -1,4 +1,6 @@
 import logging
+import sys
+import time
 import uuid
 
 from fastapi import FastAPI, Request
@@ -9,7 +11,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from starlette.exceptions import HTTPException
 
-from . import auth, files, properties, reviews
+from . import auth, files, google, properties, reviews
 from .common import ApiError
 from .config import get_settings
 from .database import engine
@@ -21,12 +23,24 @@ app = FastAPI(
     openapi_url="/api/openapi.json",
 )
 settings = get_settings()
+
+# Uvicorn's own access log is disabled (--no-access-log); this one adds timing and
+# the request id. Bodies and headers are never logged: they carry Google
+# credentials and session tokens. Query strings only hold filters, cursors and paging.
+access_log = logging.getLogger("rental_review.access")
+if not access_log.handlers:
+    _handler = logging.StreamHandler(sys.stdout)
+    _handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+    access_log.addHandler(_handler)
+    access_log.setLevel(logging.INFO)
+    access_log.propagate = False
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins.split(","),
     allow_methods=["GET", "POST", "PATCH", "DELETE"],
     allow_headers=["Authorization", "Content-Type"],
-    expose_headers=["X-Request-ID", "Retry-After"],
+    expose_headers=["X-Request-ID", "X-Response-Time", "Retry-After"],
 )
 
 
@@ -45,7 +59,35 @@ def error_response(request, status, code, message, fields=None, headers=None, re
 
 @app.middleware("http")
 async def request_headers(request: Request, call_next):
+    started = time.perf_counter()
     request.state.request_id = str(uuid.uuid4())
+    path = request.url.path + (f"?{request.url.query}" if request.url.query else "")
+    # Container health probes run every few seconds; only log them when they fail.
+    quiet = request.url.path.startswith("/api/health/")
+    if not quiet:
+        access_log.info("--> %s %s request_id=%s", request.method, path, request.state.request_id)
+    response = await handle(request, call_next)
+    elapsed_ms = (time.perf_counter() - started) * 1000
+    response.headers["X-Request-ID"] = request.state.request_id
+    response.headers["X-Response-Time"] = f"{elapsed_ms:.1f}ms"
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    if quiet and response.status_code < 400:
+        return response
+    access_log.log(
+        logging.WARNING if response.status_code >= 500 else logging.INFO,
+        "<-- %s %s %s %.1fms size=%s request_id=%s",
+        request.method,
+        path,
+        response.status_code,
+        elapsed_ms,
+        response.headers.get("content-length", "-"),
+        request.state.request_id,
+    )
+    return response
+
+
+async def handle(request: Request, call_next):
     try:
         length = int(request.headers.get("content-length", "0"))
     except ValueError:
@@ -58,14 +100,11 @@ async def request_headers(request: Request, call_next):
         try:
             response = await call_next(request)
         except Exception:
-            # Never print request bodies, phone numbers, OTPs, or credentials.
+            # Never print request bodies, emails, or credentials.
             logging.error("Unhandled error; request_id=%s", request.state.request_id)
             response = error_response(
                 request, 500, "INTERNAL_ERROR", "An unexpected error occurred."
             )
-    response.headers["X-Request-ID"] = request.state.request_id
-    response.headers["Cache-Control"] = "no-store"
-    response.headers["X-Content-Type-Options"] = "nosniff"
     return response
 
 
@@ -141,5 +180,5 @@ def ready():
     return {"status": "ok", "database": "ok"}
 
 
-for router in [auth.router, properties.router, reviews.router, files.router]:
+for router in [auth.router, google.router, properties.router, reviews.router, files.router]:
     app.include_router(router, prefix="/api/v1")

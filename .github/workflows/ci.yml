@@ -31,7 +31,6 @@ jobs:
     env:
       DATABASE_URL: postgresql+psycopg://rental:rental_test@localhost:5432/rental_test
       APP_ENV: test
-      SMS_BACKEND: development
     defaults:
       run:
         working-directory: python/backend

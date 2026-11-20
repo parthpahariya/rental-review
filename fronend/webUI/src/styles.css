@@ -1851,3 +1851,24 @@ select {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Google sign-in: Google renders its own branded button inside .google-button. */
+.google-sign-in {
+  display: grid;
+  gap: 14px;
+  margin: 16px 0 14px;
+}
+.google-sign-in.loading .google-button {
+  /* Placeholder the size of Google's button until its script draws it. */
+  border-radius: 999px;
+  background: var(--surface-2);
+}
+.google-sign-in.disabled {
+  opacity: 0.6;
+  pointer-events: none;
+}
+.google-button {
+  display: flex;
+  justify-content: center;
+  min-height: 44px;
+}

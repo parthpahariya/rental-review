@@ -52,6 +52,9 @@ export default function PropertyMap({
   const map = useRef<L.Map | null>(null);
   const markers = useRef<L.MarkerClusterGroup | null>(null);
   const byId = useRef(new Map<string, L.Marker>());
+  /** What each pin was last drawn with, so unchanged pins are left alone. */
+  const pinKeys = useRef(new Map<string, string>());
+  const byIdLocation = useRef(new Map<string, Location>());
   const highlight = useRef<string | null>(null);
   const draftMarker = useRef<L.Marker | null>(null);
   const select = useRef(onSelect);
@@ -90,13 +93,8 @@ export default function PropertyMap({
       );
       const c = b.getCenter();
       viewChange.current?.({
-        center: { latitude: c.lat, longitude: c.lng },
-        bounds: {
-          west: b.getWest(),
-          south: b.getSouth(),
-          east: b.getEast(),
-          north: b.getNorth(),
-        },
+        center: { latitude: c.lat, longitude: wrapLongitude(c.lng) },
+        bounds: validBounds(b),
       });
     };
     instance.on("moveend", reportView);
@@ -119,46 +117,95 @@ export default function PropertyMap({
       observer.disconnect();
       instance.remove();
       map.current = null;
+      byId.current.clear();
+      pinKeys.current.clear();
       draftMarker.current = null;
     };
   }, []);
+  // Pins are updated in place rather than cleared and rebuilt on every response:
+  // rebuilding mid-zoom left markercluster holding detached markers, which threw
+  // on every later move and stopped clustering and view updates.
   useEffect(() => {
-    if (!map.current || !markers.current) return;
-    markers.current.clearLayers();
-    byId.current.clear();
-    const layers = locations.map((location) => {
+    const group = markers.current;
+    if (!map.current || !group) return;
+    const wanted = new Map(locations.map((l) => [l.id, l]));
+    const stale: L.Marker[] = [];
+    for (const [id, marker] of byId.current)
+      if (!wanted.has(id)) {
+        stale.push(marker);
+        byId.current.delete(id);
+        pinKeys.current.delete(id);
+      }
+    if (stale.length) group.removeLayers(stale);
+    const added: L.Marker[] = [];
+    for (const location of locations) {
       const active = location.id === selected;
       const rating = location.summary.average_rating;
+      const label = rating == null ? "New" : `★ ${rating.toFixed(1)}`;
+      const key = `${active}|${label}|${location.latitude},${location.longitude}`;
+      const existing = byId.current.get(location.id);
+      if (existing && pinKeys.current.get(location.id) === key) continue;
       const icon = L.divIcon({
         className: "",
-        html: `<span class="map-pin ${active ? "active" : ""}">${rating == null ? "New" : `★ ${rating.toFixed(1)}`}</span>`,
+        html: `<span class="map-pin ${active ? "active" : ""}">${label}</span>`,
         iconSize: [68, 38],
         iconAnchor: [34, 38],
       });
+      pinKeys.current.set(location.id, key);
+      if (existing) {
+        existing.setIcon(icon);
+        existing.setLatLng([location.latitude, location.longitude]);
+        continue;
+      }
       const marker = L.marker([location.latitude, location.longitude], {
         icon,
         keyboard: true,
         title: location.building_name || location.address,
         alt: `Read reviews of ${location.building_name || location.address}`,
       });
-      marker.on("click", () => select.current(location));
+      marker.on("click", () =>
+        select.current(byIdLocation.current.get(location.id) ?? location),
+      );
       marker.on("mouseover", () => hover.current?.(location.id));
       marker.on("mouseout", () => hover.current?.(null));
       byId.current.set(location.id, marker);
-      return marker;
-    });
-    markers.current.addLayers(layers);
+      added.push(marker);
+    }
+    byIdLocation.current = wanted;
+    if (added.length) group.addLayers(added);
     applyHighlight(highlight.current);
-    const marker = selected ? byId.current.get(selected) : undefined;
-    // Zooms in far enough to pull the selected pin out of its cluster.
-    if (marker)
-      markers.current.zoomToShowLayer(marker, () => {
-        // Nudge the map if the pin ended up under the floating panel.
-        const p = map.current!.latLngToContainerPoint(marker.getLatLng());
-        const edge = inset.current + 48;
-        if (p.x < edge) map.current!.panBy([p.x - edge - 80, 0]);
-      });
   }, [locations, selected]);
+  // Bring a newly selected pin into view once, not on every data refresh
+  // (that used to yank the map back while the visitor was zooming out).
+  useEffect(() => {
+    const marker = selected ? byId.current.get(selected) : undefined;
+    if (marker) reveal(marker);
+  }, [selected]);
+  function reveal(marker: L.Marker, attempts = 3) {
+    const instance = map.current;
+    const group = markers.current;
+    if (!instance || !group || !group.hasLayer(marker) || attempts === 0) return;
+    const shown = group.getVisibleParent(marker) as L.Marker | L.MarkerCluster | null;
+    if (shown === marker) {
+      // Nudge the map if the pin ended up under the floating panel.
+      const p = instance.latLngToContainerPoint(marker.getLatLng());
+      const edge = inset.current + 48;
+      if (p.x < edge) instance.panBy([p.x - edge - 80, 0]);
+      return;
+    }
+    if (shown && "spiderfy" in shown && instance.getZoom() >= instance.getMaxZoom()) {
+      shown.spiderfy();
+      return;
+    }
+    // Zoom to where the pin's smallest cluster splits apart, then check again.
+    const parent = (marker as L.Marker & { __parent?: { _zoom: number } }).__parent;
+    const zoom = Math.min(
+      instance.getMaxZoom(),
+      Math.max(instance.getZoom(), (parent?._zoom ?? instance.getZoom()) + 1),
+    );
+    instance.once("moveend", () => reveal(marker, attempts - 1));
+    instance.setView(marker.getLatLng(), zoom);
+  }
   useEffect(() => {
     if (!focus || !map.current) return;
     const b = focus.bounds;
@@ -247,6 +294,25 @@ export default function PropertyMap({
       aria-label="Interactive rental location map. Select a pin to read reviews, or select an empty spot to add a new place. The property list provides the same results."
     />
   );
+}
+
+/** Leaflet keeps counting past ±180° when the world repeats; the API won't. */
+function wrapLongitude(lng: number) {
+  return ((((lng + 180) % 360) + 360) % 360) - 180;
+}
+
+/** The visible area as valid WGS84 bounds (west > east crosses the antimeridian). */
+export function validBounds(b: L.LatLngBounds): Bounds {
+  const south = Math.max(-90, b.getSouth());
+  const north = Math.min(90, b.getNorth());
+  if (b.getEast() - b.getWest() >= 360)
+    return { west: -180, south, east: 180, north };
+  return {
+    west: wrapLongitude(b.getWest()),
+    south,
+    east: wrapLongitude(b.getEast()),
+    north,
+  };
 }
 
 function clusterIcon(cluster: L.MarkerCluster) {

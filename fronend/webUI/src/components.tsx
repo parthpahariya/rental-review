@@ -19,6 +19,7 @@ import type {
   Review,
 } from "./api";
 import type { Point } from "./Map";
+import GoogleButton from "./GoogleButton";
 
 export function Icon({ name, size = 20 }: { name: string; size?: number }) {
   const paths: Record<string, ReactNode> = {
@@ -146,7 +147,6 @@ export function ErrorNotice({ error }: { error: string }) {
 }
 
 type AuthResult = { account: Account; session: { token: string } };
-type Verification = AuthResult & { outcome: string; completion_token: string };
 
 export function SignIn({
   onClose,
@@ -155,86 +155,26 @@ export function SignIn({
   onClose: () => void;
   onSuccess: (account: Account) => void;
 }) {
-  const [phone, setPhone] = useState("+91");
-  const [challenge, setChallenge] = useState("");
-  const [code, setCode] = useState("");
-  const [devCode, setDevCode] = useState("");
+  /** Google credential held while an inactive account confirms reactivation. */
   const [reactivation, setReactivation] = useState("");
+  const [unavailable, setUnavailable] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [cooldown, setCooldown] = useState(0);
-  useEffect(() => {
-    if (!cooldown) return;
-    const timer = setTimeout(() => setCooldown(cooldown - 1), 1000);
-    return () => clearTimeout(timer);
-  }, [cooldown]);
-  function signedIn(result: AuthResult) {
-    setToken(result.session.token);
-    onSuccess(result.account);
-  }
-  async function requestCode() {
+  async function google(credential: string, reactivate = false) {
     setError("");
     setBusy(true);
     try {
-      const result = await post<{
-        data: {
-          challenge_id: string;
-          development_code?: string;
-          resend_available_at: string;
-        };
-      }>("/auth/otp/challenges", { mobile_number: phone });
-      setChallenge(result.data.challenge_id);
-      setDevCode(result.data.development_code || "");
-      setCooldown(
-        Math.max(
-          0,
-          Math.ceil(
-            (new Date(result.data.resend_available_at).getTime() - Date.now()) /
-              1000,
-          ),
-        ),
-      );
-    } catch (e) {
-      setError(message(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-  async function submit(e: FormEvent) {
-    e.preventDefault();
-    if (!challenge) {
-      await requestCode();
-      return;
-    }
-    setBusy(true);
-    setError("");
-    try {
-      if (reactivation) {
-        signedIn(
-          (
-            await post<{ data: AuthResult }>("/auth/reactivations", {
-              completion_token: reactivation,
-              confirm: true,
-            })
-          ).data,
-        );
-      } else {
-        const result = (
-          await post<{ data: Verification }>("/auth/otp/verifications", {
-            challenge_id: challenge,
-            code,
-          })
-        ).data;
-        if (result.outcome === "signed_in") signedIn(result);
-        else if (result.outcome === "registration_required") {
-          signedIn(
-            (
-              await post<{ data: AuthResult }>("/auth/registrations", {
-                completion_token: result.completion_token,
-              })
-            ).data,
-          );
-        } else setReactivation(result.completion_token);
+      const result = (
+        await post<{ data: Partial<AuthResult> & { outcome: string } }>(
+          "/auth/google",
+          { credential, reactivate },
+        )
+      ).data;
+      if (result.outcome === "reactivation_required")
+        setReactivation(credential);
+      else {
+        setToken(result.session!.token);
+        onSuccess(result.account!);
       }
     } catch (e) {
       setError(message(e));
@@ -247,89 +187,51 @@ export function SignIn({
       title={reactivation ? "Welcome back" : "A little trust starts with you"}
       onClose={onClose}
     >
-      <p className="muted">
-        Sign in or create an account with your mobile number. Your number stays
-        private.
-      </p>
-      <form onSubmit={submit} className="form-stack">
-        {!reactivation && (
-          <label>
-            Mobile number
-            <input
-              type="tel"
-              autoComplete="tel"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              placeholder="+91 98765 43210"
-              required
-              disabled={!!challenge}
-            />
-          </label>
-        )}
-        {challenge && !reactivation && (
-          <>
-            {devCode ? (
-              <div className="dev-notice">
-                Development SMS mode · Your code is <strong>{devCode}</strong>
-              </div>
-            ) : (
-              <p>Enter the 6-digit code sent to your number.</p>
-            )}
-            <label>
-              Verification code
-              <input
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                pattern="[0-9]{6}"
-                maxLength={6}
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-                required
-              />
-            </label>
-            <button
-              type="button"
-              className="text-button"
-              disabled={busy || cooldown > 0}
-              onClick={requestCode}
-            >
-              {cooldown > 0 ? `Resend in ${cooldown}s` : "Resend code"}
-            </button>
-          </>
-        )}
-        {reactivation && (
+      {reactivation ? (
+        <form
+          className="form-stack"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void google(reactivation, true);
+          }}
+        >
           <p>
             Your account is inactive. Reactivating restores your account and
             existing reviews. Original editing deadlines still apply.
           </p>
-        )}
-        <ErrorNotice error={error} />
-        <button className="button" disabled={busy}>
-          {busy
-            ? "Please wait…"
-            : reactivation
-              ? "Reactivate my account"
-              : challenge
-                ? "Verify & continue"
-                : "Send verification code"}
-          <Icon name="arrow" size={18} />
-        </button>
-        {challenge && !reactivation && (
-          <button
-            type="button"
-            className="text-button"
-            onClick={() => {
-              setChallenge("");
-              setCode("");
-              setError("");
-            }}
-          >
-            Use a different number
+          <ErrorNotice error={error} />
+          <button className="button" disabled={busy}>
+            {busy ? "Please wait…" : "Reactivate my account"}
+            <Icon name="arrow" size={18} />
           </button>
-        )}
-      </form>
+        </form>
+      ) : (
+        <>
+          <p className="muted">
+            Sign in or create an account with your Google account. It takes one
+            tap, and your email stays private.
+          </p>
+          {unavailable ? (
+            <p className="error" role="alert">
+              Google sign-in isn’t available right now. Please try again later.
+            </p>
+          ) : (
+            <GoogleButton
+              onCredential={(c) => void google(c)}
+              onUnavailable={() => setUnavailable(true)}
+              disabled={busy}
+            />
+          )}
+          {busy && (
+            <p className="muted" role="status">
+              Signing you in…
+            </p>
+          )}
+          <ErrorNotice error={error} />
+        </>
+      )}
       <p className="fine-print">
-        <Icon name="shield" size={15} /> Your phone number is never shown with a
+        <Icon name="shield" size={15} /> Your email is never shown with a
         review.
       </p>
     </Modal>
@@ -612,7 +514,7 @@ export function AccountPanel({
   return (
     <Modal title="Your rental notebook" onClose={onClose}>
       <div className="account-bar">
-        <span>{account.mobile_number}</span>
+        <span>{account.email}</span>
         <button
           disabled={busy}
           className="text-button"
@@ -826,7 +728,7 @@ export function AccountPanel({
                 <p>
                   Deactivating ends all your sessions. Your tenant reviews and
                   interaction reviews remain public. You can reactivate by
-                  verifying your mobile number.
+                  signing in with Google again.
                 </p>
                 <div className="inline-actions">
                   <button
