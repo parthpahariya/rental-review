@@ -2,7 +2,7 @@ name: Test, build, and publish
 
 on:
   push:
-    branches: [main]
+    branches: [main, topic/parth/plan]
     tags: ["v*"]
   pull_request:
   workflow_dispatch:
