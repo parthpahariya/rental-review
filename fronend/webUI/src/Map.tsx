@@ -88,13 +88,9 @@ export default function PropertyMap({
       maxZoom: MAX_ZOOM,
     }).addTo(instance);
     // Marker clicks don't bubble to the map, so this only fires on empty space.
-    // While a small bubble's pins are fanned out, that click just closes them
-    // (markercluster does that itself) instead of starting a new place.
-    let fannedOut = false;
-    instance.on("click", (e: L.LeafletMouseEvent) => {
-      if (fannedOut) return;
-      pick.current?.({ latitude: e.latlng.lat, longitude: e.latlng.lng });
-    });
+    instance.on("click", (e: L.LeafletMouseEvent) =>
+      pick.current?.({ latitude: e.latlng.lat, longitude: e.latlng.lng }),
+    );
     const reportView = () => {
       // Report only the part of the map not covered by the floating panel.
       const size = instance.getSize();
@@ -113,32 +109,16 @@ export default function PropertyMap({
     instance.on("moveend", reportView);
     reportView();
     map.current = instance;
-    // Nearby pins merge into a counted bubble. Clicking a small bubble (under
-    // FAN_OUT_BELOW places) fans its pins out in place; a bigger one zooms in.
-    // At the closest zoom every building gets its own pin, never a bubble.
+    // Nearby pins merge into a counted bubble; clicking one zooms in. At the
+    // closest zoom every building gets its own pin, so pins never fan out.
     markers.current = L.markerClusterGroup({
       maxClusterRadius: clusterRadius,
       disableClusteringAtZoom: MAX_ZOOM,
       showCoverageOnHover: false,
-      spiderfyOnMaxZoom: true,
-      // Rating pins are ~68 px wide; spread the fan so they don't overlap.
-      spiderfyDistanceMultiplier: 2.4,
-      zoomToBoundsOnClick: false,
+      spiderfyOnMaxZoom: false,
+      zoomToBoundsOnClick: true,
       iconCreateFunction: clusterIcon,
     }).addTo(instance);
-    markers.current.on("clusterclick", (e: L.LeafletEvent) => {
-      const cluster = (e as L.LeafletEvent & { layer: L.MarkerCluster }).layer;
-      if (cluster.getChildCount() < FAN_OUT_BELOW) cluster.spiderfy();
-      else cluster.zoomToBounds({ padding: [40, 40] });
-    });
-    markers.current.on("spiderfied", () => {
-      fannedOut = true;
-      applyHighlight(highlight.current);
-    });
-    markers.current.on("unspiderfied", () => {
-      // Let the closing click finish first, so it isn't taken as a new place.
-      setTimeout(() => (fannedOut = false), 0);
-    });
     markers.current.on("animationend", () => applyHighlight(highlight.current));
     instance.on("zoomend", () => applyHighlight(highlight.current));
     const observer = new ResizeObserver(() => instance.invalidateSize());
@@ -226,14 +206,6 @@ export default function PropertyMap({
       const p = instance.latLngToContainerPoint(marker.getLatLng());
       const edge = inset.current + 48;
       if (p.x < edge) instance.panBy([p.x - edge - 80, 0]);
-      return;
-    }
-    if (
-      shown &&
-      "spiderfy" in shown &&
-      instance.getZoom() >= instance.getMaxZoom()
-    ) {
-      shown.spiderfy();
       return;
     }
     // Zoom to where the pin's smallest cluster splits apart, then check again.
@@ -367,8 +339,6 @@ export function validBounds(b: L.LatLngBounds): Bounds {
  */
 /** OpenStreetMap's closest tile level; pins are never grouped here. */
 const MAX_ZOOM = 19;
-/** Bubbles with fewer places than this open into their pins when clicked. */
-const FAN_OUT_BELOW = 10;
 
 export function clusterRadius(zoom: number) {
   if (zoom <= 13) return 160;

@@ -164,10 +164,6 @@ describe("Rental Review", () => {
       screen.getByRole("combobox", { name: /Search for a locality/ }),
       "Indira",
     );
-    // Reviewed places in the locality are suggested first.
-    expect(
-      await screen.findByRole("option", { name: /^Parkside Residences/ }),
-    ).toBeInTheDocument();
     const localities = await screen.findAllByRole("option", {
       name: /^Indiranagar/,
     });
@@ -181,18 +177,78 @@ describe("Rental Review", () => {
     expect(
       screen.getByLabelText(/Interactive rental location map/),
     ).toBeInTheDocument();
-    expect(document.querySelector(".area-chip strong")).toHaveTextContent(
-      "Indiranagar",
-    );
+    // The chosen area shows in the topbar, next to the profile.
+    expect(
+      screen.getByRole("button", { name: "Area: Indiranagar. Change area" }),
+    ).toHaveTextContent("Indiranagar");
     const geocode = vi
       .mocked(fetch)
       .mock.calls.map(([url]) => String(url))
-      .find((url) => url.includes("photon"));
+      .find((url) => url.startsWith("https://photon.komoot.io/api/"));
     expect(geocode).toContain("q=Indira");
     expect(geocode).toContain("bbox=68.1%2C6.5%2C97.5%2C35.7");
+    // Ranked by distance from Bengaluru (no location shared in the test).
+    expect(geocode).toContain("lat=12.9550");
+    expect(geocode).toContain("lon=77.6300");
   });
 
-  it("jumps straight to a reviewed place matched by the locality search", async () => {
+  it("suggests nearby areas before anything is typed", async () => {
+    const nearby = {
+      features: [
+        {
+          geometry: { coordinates: [77.6245, 12.9352] },
+          properties: {
+            name: "Koramangala",
+            type: "district",
+            city: "Bengaluru",
+            countrycode: "IN",
+          },
+        },
+        {
+          geometry: { coordinates: [77.6101, 12.9166] },
+          properties: {
+            name: "BTM Layout",
+            type: "district",
+            city: "Bengaluru",
+            countrycode: "IN",
+          },
+        },
+      ],
+    };
+    const base = fetch as unknown as (input: string) => Promise<Response>;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: string) =>
+        input.startsWith("https://photon.komoot.io/reverse")
+          ? Promise.resolve(new Response(JSON.stringify(nearby)))
+          : base(input),
+      ),
+    );
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(
+      screen.getByRole("combobox", { name: /Search for a locality/ }),
+    );
+    expect(await screen.findByText("Areas in Bengaluru")).toBeInTheDocument();
+    const options = screen.getAllByRole("option");
+    expect(options.map((o) => o.textContent)).toEqual([
+      expect.stringContaining("Koramangala"),
+      expect.stringContaining("BTM Layout"),
+    ]);
+    const reverse = vi
+      .mocked(fetch)
+      .mock.calls.map(([url]) => String(url))
+      .find((url) => url.startsWith("https://photon.komoot.io/reverse"));
+    expect(reverse).toContain("lat=12.9550");
+    expect(reverse).toContain("layer=district");
+    // Picking one opens the map there.
+    await user.click(options[0]);
+    expect(
+      screen.getByRole("button", { name: "Area: Koramangala. Change area" }),
+    ).toBeInTheDocument();
+  });
+
+  it("suggests localities only, never buildings", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(
@@ -210,19 +266,15 @@ describe("Rental Review", () => {
       screen.getByRole("combobox", { name: /Search for a locality/ }),
       "Parkside",
     );
-    // Buildings are matched on the server, not from a downloaded catalogue.
-    await waitFor(() =>
-      expect(fetch).toHaveBeenCalledWith(
-        expect.stringContaining(
-          "/locations?reviewed_only=false&limit=3&q=Parkside",
-        ),
-        expect.anything(),
-      ),
-    );
-    await user.click(
-      await screen.findByRole("option", { name: /Parkside Residences/ }),
-    );
-    expect(await screen.findByText("A helpful owner.")).toBeInTheDocument();
+    expect(
+      await screen.findByText(/No localities in India match “Parkside”/),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("option", { name: /Parkside Residences/ }),
+    ).not.toBeInTheDocument();
+    // The server's building search is no longer called from the search box.
+    const urls = vi.mocked(fetch).mock.calls.map(([url]) => String(url));
+    expect(urls.some((u) => u.includes("q=Parkside"))).toBe(false);
   });
 
   it("explains when Google sign-in is not configured and offers no phone login", async () => {
@@ -618,6 +670,10 @@ describe("Rental Review", () => {
     setToken("test-session");
     const user = userEvent.setup();
     render(<App />);
+    // The name's first letter wins over the email's ("A", not "M").
+    expect(
+      await screen.findByRole("button", { name: "Your account" }),
+    ).toHaveTextContent(/^A$/);
     await user.click(
       await screen.findByRole("button", { name: "Your account" }),
     );
@@ -770,6 +826,44 @@ describe("Rental Review", () => {
     expect(cards()).toHaveLength(20);
     await user.selectOptions(screen.getByLabelText("Sort by"), "reviews");
     expect(cards()[0]).toHaveAccessibleName(/Tower 3\b/);
+  });
+
+  it("shows How it works only on the home page and a profile icon when signed in", async () => {
+    const base = fetch as unknown as (
+      input: string,
+      init?: RequestInit,
+    ) => Promise<Response>;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: string, init?: RequestInit) =>
+        input.endsWith("/me")
+          ? Promise.resolve(
+              result(
+                { id: "me", email: "me@example.com", role: "user" },
+                false,
+              ),
+            )
+          : base(input, init),
+      ),
+    );
+    setToken("test-session");
+    const user = userEvent.setup();
+    render(<App />);
+    const profile = await screen.findByRole("button", { name: "Your account" });
+    // Shows the first letter of the name, or of the email when there is no
+    // name; the accessible name stays "Your account".
+    expect(profile).toHaveTextContent(/^M$/);
+    expect(
+      screen.getByRole("button", { name: "How it works" }),
+    ).toBeInTheDocument();
+    await browse(user);
+    await screen.findByRole("button", { name: /Parkside Residences/ });
+    expect(
+      screen.queryByRole("button", { name: "How it works" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Your account" }),
+    ).toBeInTheDocument();
   });
 
   it("home page has no statistics or top-rated list and loads no place data", async () => {

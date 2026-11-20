@@ -178,7 +178,9 @@ export function FeedbackCard({
 }) {
   const isReview = "rating" in item;
   return (
-    <article className={`review-card ${own ? "is-own" : ""}`}>
+    <article
+      className={`review-card ${isReview ? "" : "is-interaction"} ${own ? "is-own" : ""}`}
+    >
       <header className="review-card-head">
         <span className="avatar" aria-hidden="true">
           {item.owner_name.trim().charAt(0).toUpperCase()}
@@ -784,7 +786,7 @@ export function AccountPanel({
               <h3>Places you added</h3>
               {groupByLocation(added).map(([location, flats]) => (
                 <article key={location.id} className="account-record">
-                  <span className="badge">
+                  <span className="badge sentence">
                     {flats.some((f) => f.added_place)
                       ? "You added this building"
                       : "You added a flat here"}

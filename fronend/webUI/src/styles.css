@@ -300,10 +300,12 @@ svg {
 }
 .topbar-search {
   flex: 1;
+  min-width: 0;
   max-width: 520px;
 }
 .topbar-nav {
   display: flex;
+  flex: none;
   align-items: center;
   gap: 8px;
   margin-left: auto;
@@ -595,15 +597,6 @@ svg {
   font-weight: 400;
   color: var(--muted);
 }
-.locality-options em {
-  padding: 3px 10px;
-  border-radius: 999px;
-  background: var(--gold-soft);
-  color: #78350f;
-  font-size: 12px;
-  font-style: normal;
-  font-weight: 600;
-}
 .locality-options li.active,
 .locality-options li[role="option"]:hover {
   background: var(--gold-wash);
@@ -665,44 +658,8 @@ svg {
   background: var(--surface);
   border-bottom: 1px solid var(--line);
 }
-.area-chip {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.area-icon {
-  display: grid;
-  place-items: center;
-  width: 44px;
-  height: 44px;
-  border-radius: 14px;
-  background: var(--gold);
-  color: var(--ink);
-}
-.area-chip > span:nth-child(2) {
-  flex: 1;
-  min-width: 0;
-}
-.area-chip strong {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-family: var(--font-display);
-  font-size: 22px;
-  font-weight: 800;
-  letter-spacing: -0.02em;
-}
-.area-chip small {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 13px;
-  color: var(--muted);
-}
 .panel-count {
-  margin-top: 14px;
+  margin-top: 0;
   font-size: 14px;
   color: var(--ink-2);
 }
@@ -1869,4 +1826,119 @@ select {
 .name-form small {
   color: var(--muted);
   font-size: 12px;
+}
+
+/* Written labels keep their own capitalisation (statuses like "pending" don't). */
+.badge.sentence {
+  text-transform: none;
+}
+/* Interactions use the blue of the Interactions tab, so the two kinds of
+   feedback are told apart at a glance. */
+.review-card.is-interaction .avatar {
+  background: var(--info-soft);
+  color: var(--info);
+}
+.review-card.is-interaction .review-chip {
+  background: var(--info-soft);
+  color: #1e3a8a;
+}
+.review-card.is-interaction .review-chip-label {
+  color: #1e3a8a;
+}
+
+/* Signed in: a round gold avatar with the first letter of the user's name. */
+.topbar-nav .profile-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: var(--gold);
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+  transition: transform 150ms var(--ease), box-shadow 150ms var(--ease);
+}
+.topbar-nav .profile-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 2px 2px 0 var(--ink);
+}
+.topbar-nav .profile-button:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* Topbar: the area being explored, next to the profile avatar. */
+.location-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 240px;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 2px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color 150ms var(--ease);
+}
+.location-chip svg {
+  flex: none;
+  color: var(--gold-deep);
+}
+.location-chip span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.location-chip:hover {
+  border-color: var(--ink);
+}
+.location-chip:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+@media (max-width: 860px) {
+  .location-chip {
+    max-width: 130px;
+    padding: 0 12px;
+    font-size: 14px;
+  }
+}
+/* Phones: just the pin, so the search, area and avatar fit on one row.
+   The area name stays in the button's label and tooltip. */
+@media (max-width: 600px) {
+  .location-chip {
+    width: 44px;
+    padding: 0;
+    justify-content: center;
+  }
+  .location-chip span {
+    display: none;
+  }
+}
+
+/* "Areas near you" heading above the nearby suggestions. */
+.locality-options .locality-heading {
+  padding: 10px 14px 4px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  cursor: default;
+}
+.locality-options .locality-heading:hover {
+  background: none;
 }

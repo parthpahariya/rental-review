@@ -38,6 +38,12 @@ files change. With Colima, use `DOCKER_CONTEXT=colima-rental-review make watch`
 (or `colima` for the default profile) to target that VM explicitly. Press Ctrl+C
 to stop watching; the stack keeps running.
 
+## UI and design
+
+[UI_WORKFLOW.md](UI_WORKFLOW.md) describes every screen, flow and state; the visual system
+(tokens, type, components, accessibility baseline) is in
+[design-system/rental-review/MASTER.md](design-system/rental-review/MASTER.md).
+
 ## Included behavior
 
 - OpenStreetMap/Leaflet map with pan, zoom, keyboard markers, and an equivalent searchable property list. Select a building, then a flat; switch between Tenant Reviews and Interactions.

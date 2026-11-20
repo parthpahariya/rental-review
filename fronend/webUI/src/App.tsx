@@ -82,6 +82,31 @@ export default function App() {
     window.addEventListener("resize", update);
     return () => window.removeEventListener("resize", update);
   }, []);
+  // The visitor's own position, only if they already allowed location access
+  // (we never prompt for it just to rank suggestions).
+  const [userPoint, setUserPoint] = useState<Point | null>(null);
+  useEffect(() => {
+    let live = true;
+    navigator.permissions
+      ?.query({ name: "geolocation" as PermissionName })
+      .then((status) => {
+        if (status.state !== "granted" || !live) return;
+        navigator.geolocation.getCurrentPosition(
+          (p) =>
+            live &&
+            setUserPoint({
+              latitude: p.coords.latitude,
+              longitude: p.coords.longitude,
+            }),
+          () => {},
+          { timeout: 10000, maximumAge: 600000 },
+        );
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, []);
   // Flat to open after a reload, and the dialog to resume after signing in.
   const wantFlat = useRef<string | null>(restored.flat);
   const afterSignIn = useRef<Dialog | null>(null);
@@ -140,6 +165,11 @@ export default function App() {
       flat: flat?.id ?? null,
     });
   }, [area, view, selected?.id, flat?.id]);
+  // Where search suggestions are centred: on the map, its current centre;
+  // on the home page, the visitor's position if known, else the default city.
+  const searchNear: Point = area
+    ? (view?.center ?? area.center)
+    : (userPoint ?? DEFAULT_CENTER.center);
   // Until the map reports its view, use the area the visitor picked.
   const queryBounds = view?.bounds ?? (area ? areaBounds(area) : null);
   const bbox = queryBounds
@@ -274,6 +304,8 @@ export default function App() {
     if (panelRef.current) panelRef.current.scrollTop = 0;
   }
   function openArea(next: Area) {
+    // "Use my location" gives us the visitor's position; keep it for suggestions.
+    if (next.name === "Near you") setUserPoint(next.center);
     setArea(next);
     setSelected(null);
     setDraft(null);
@@ -466,22 +498,50 @@ export default function App() {
             <LocalitySearch
               compact
               onArea={openArea}
-              onPlace={openPlace}
               onBrowseAll={browseAll}
+              near={searchNear}
+              nearLabel="Areas near the map centre"
             />
           </div>
         )}
         <nav className="topbar-nav" aria-label="Main navigation">
-          <button className="nav-link" onClick={() => setDialog("about")}>
-            How it works
-          </button>
-          <button
-            className="button secondary"
-            onClick={() => setDialog(account ? "account" : "signin")}
-          >
-            <Icon name="user" size={18} />
-            <span>{account ? "Your account" : "Sign in"}</span>
-          </button>
+          {/* The area being explored lives here, beside the profile; clicking
+              it moves to the search box to pick another one. */}
+          {area && (
+            <button
+              className="location-chip"
+              onClick={changeArea}
+              title={area.detail ? `${area.name}, ${area.detail}` : area.name}
+              aria-label={`Area: ${area.name}. Change area`}
+            >
+              <Icon name="pin" size={16} />
+              <span>{area.name}</span>
+            </button>
+          )}
+          {/* The explainer is for first-time visitors on the home page only. */}
+          {!area && (
+            <button className="nav-link" onClick={() => setDialog("about")}>
+              How it works
+            </button>
+          )}
+          {account ? (
+            <button
+              className="profile-button"
+              onClick={() => setDialog("account")}
+              aria-label="Your account"
+              title={account.name || account.email || "Your account"}
+            >
+              {initial(account) || <Icon name="user" size={20} />}
+            </button>
+          ) : (
+            <button
+              className="button secondary"
+              onClick={() => setDialog("signin")}
+            >
+              <Icon name="user" size={18} />
+              <span>Sign in</span>
+            </button>
+          )}
         </nav>
       </header>
       {!area ? (
@@ -500,8 +560,13 @@ export default function App() {
               </p>
               <LocalitySearch
                 onArea={openArea}
-                onPlace={openPlace}
                 onBrowseAll={browseAll}
+                near={searchNear}
+                nearLabel={
+                  userPoint
+                    ? "Areas near you"
+                    : `Areas in ${DEFAULT_CENTER.name}`
+                }
               />
             </div>
           </section>
@@ -574,18 +639,6 @@ export default function App() {
                 aria-label="Properties, accessible alternative to the map"
               >
                 <div className="panel-head">
-                  <div className="area-chip">
-                    <span className="area-icon" aria-hidden="true">
-                      <Icon name="pin" size={18} />
-                    </span>
-                    <span>
-                      <strong>{area.name}</strong>
-                      {area.detail && <small>{area.detail}</small>}
-                    </span>
-                    <button className="text-button" onClick={changeArea}>
-                      Change
-                    </button>
-                  </div>
                   <p className="panel-count" aria-live="polite">
                     {loading
                       ? "Loading…"
@@ -1115,6 +1168,12 @@ const PAGE_SIZE = 20;
 /** Up to 500 pins per view; denser views ask the visitor to zoom in. */
 const MAX_PAGES = 5;
 /** A first map query for an area, before the map has reported its view. */
+/** First letter of the account's name, else of its email ("" if neither). */
+function initial(account: Account) {
+  const source = (account.name || account.email || "").trim();
+  return source ? [...source][0].toLocaleUpperCase() : "";
+}
+
 function areaBounds(area: Area): Bounds {
   if (area.bounds) return area.bounds;
   // Roughly the visible span at the area's zoom level on a laptop screen.
