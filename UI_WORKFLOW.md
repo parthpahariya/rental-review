@@ -68,13 +68,17 @@ flowchart TD
    20 at a time, loading more as you scroll ("Loading more places…").
 3. **Area and counts:** the area you're exploring shows as a chip in the topbar, beside your
    profile ("📍 JP Nagar"; just the pin on phones). Tap it to search for another area. The panel
-   opens with "N places in this area · M experiences". When the area holds more than the 500
-   places a view loads, it says "500 places+" and bubbles show rounded-down counts with `+`.
-   **Zoom in** for exact numbers.
+   opens with the sort menu and a **✕** to hide it; the place count is not shown but is announced to
+   screen readers ("N places in this area · M experiences"). When the area holds more than the
+   500 places a view loads, map bubbles show rounded-down counts with `+`. **Zoom in** for exact
+   numbers.
 4. **Sort:** Nearest to map centre (default) · Highest rated · Most reviewed.
 5. **Bubbles:** pins group into bubbles. Tapping a bubble zooms in, and at full zoom every
    building has its own pin.
 6. **Hovering a list row** highlights its pin (or its bubble), and the reverse works too.
+7. The **✕** at the top right of the panel ("Hide list" / "Hide details" for screen readers) hides the results or details to show more map; counts and
+   "nearest" then use the whole map. **Show list · N places** (top-left; bottom-centre on phones)
+   brings it back, and tapping a pin reopens it with that place. The choice is remembered.
 
 ### 2. Read about a place
 
@@ -98,7 +102,7 @@ flowchart TD
 
 ### 4. Add a missing building
 
-1. **Tap empty map** (or **Add a place**): a draggable **+ New** pin appears with
+1. **Tap empty map**: a draggable **+ New** pin appears with
    "Add a new place here?" → **Cancel** / **Continue**.
 2. **Already on the map nearby** lists places within 100 m, each with **Review this place**,
    to prevent duplicates.
@@ -141,7 +145,7 @@ flowchart TD
 | --- | --- |
 | Loading the area | "Loading…" in the panel count (no list flash for fast responses) |
 | Loading more | "Loading more places…" under the list (live region) |
-| Empty area | "No places in this area", with a **Zoom out** action and a hint to tap the map to add one |
+| Empty area | "No places in this area. Move the map to another area, or tap it to add a place here." |
 | Capped area | "500 places+" and `N+` bubbles: zoom in for exact data |
 | No reviews on a flat | "No tenant reviews yet / Be the first to share your experience with this flat." |
 | Network or server error | Inline `role="alert"` message with a retry; the list keeps its last data |

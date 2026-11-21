@@ -9,11 +9,26 @@ const mapView: { current: unknown } = { current: null };
 vi.mock("./Map", async () => {
   const { useEffect } = await import("react");
   return {
-    default: ({ onViewChange }: { onViewChange?: (v: unknown) => void }) => {
+    default: ({
+      onViewChange,
+      onPick,
+    }: {
+      onViewChange?: (v: unknown) => void;
+      onPick?: (p: { latitude: number; longitude: number }) => void;
+    }) => {
       useEffect(() => {
         if (mapView.current) onViewChange?.(mapView.current);
       }, [onViewChange]);
-      return <div aria-label="Interactive rental location map" />;
+      return (
+        <div aria-label="Interactive rental location map">
+          {/* Stands in for tapping an empty spot on the real map. */}
+          <button
+            onClick={() => onPick?.({ latitude: 12.955, longitude: 77.63 })}
+          >
+            Tap the map here
+          </button>
+        </div>
+      );
     },
   };
 });
@@ -64,8 +79,10 @@ function result(data: unknown, list = true) {
 }
 
 beforeEach(() => {
-  // Every test starts at the home page with a clean address bar.
+  // Every test starts at the home page with a clean address bar and no
+  // remembered preferences (such as a hidden results list).
   window.history.replaceState(null, "", "/");
+  localStorage.clear();
   setToken(null);
   Element.prototype.scrollIntoView = vi.fn();
   vi.stubGlobal(
@@ -248,6 +265,32 @@ describe("Rental Review", () => {
     ).toBeInTheDocument();
   });
 
+  it("lets the visitor hide the results list and bring it back", async () => {
+    const user = userEvent.setup();
+    const first = render(<App />);
+    await browse(user);
+    await screen.findByRole("button", { name: /Parkside Residences/ });
+    await user.click(screen.getByRole("button", { name: "Hide list" }));
+    expect(
+      screen.queryByRole("button", { name: /Parkside Residences/ }),
+    ).not.toBeInTheDocument();
+    const show = screen.getByRole("button", { name: /Show list · 1 place/ });
+    // The choice is remembered: a fresh visit keeps the list hidden.
+    first.unmount();
+    render(<App />);
+    expect(
+      await screen.findByRole("button", { name: /Show list/ }),
+    ).toBeInTheDocument();
+    expect(show).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /Show list/ }));
+    expect(
+      await screen.findByRole("button", { name: /Parkside Residences/ }),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: /Show list/ }),
+    ).not.toBeInTheDocument();
+  });
+
   it("suggests localities only, never buildings", async () => {
     vi.stubGlobal(
       "fetch",
@@ -422,7 +465,11 @@ describe("Rental Review", () => {
     render(<App />);
     await browse(user);
     await screen.findByRole("button", { name: /Parkside Residences/ });
-    await user.click(screen.getByRole("button", { name: /Add a place/ }));
+    // No "Add a place" button in the panel: places are added by tapping the map.
+    expect(
+      screen.queryByRole("button", { name: /Add a place/ }),
+    ).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Tap the map here" }));
     await user.click(screen.getByRole("button", { name: /Continue/ }));
     await user.type(screen.getByLabelText(/Building name/), "Fresh Pin House");
     await user.type(screen.getByLabelText("Address"), "12 New Road, Bengaluru");
@@ -908,9 +955,10 @@ describe("Rental Review", () => {
     expect(
       await screen.findByText(/500 places\+ in this area/),
     ).toBeInTheDocument();
+    // The "+" in the count is the only sign of the cap; no extra message.
     expect(
-      screen.getByText(/Zoom in to see every building/),
-    ).toBeInTheDocument();
+      screen.queryByText(/Zoom in to see every building/),
+    ).not.toBeInTheDocument();
     const pages = vi
       .mocked(fetch)
       .mock.calls.map(([url]) => String(url))

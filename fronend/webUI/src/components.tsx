@@ -76,6 +76,7 @@ export function Icon({ name, size = 20 }: { name: string; size?: number }) {
       </>
     ),
     chevron: <path d="m9 5 7 7-7 7" />,
+    list: <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" />,
     plus: <path d="M12 5v14M5 12h14" />,
     check: <path d="m5 12.5 4.5 4.5L19 7.5" />,
     star: (

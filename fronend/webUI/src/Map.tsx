@@ -27,7 +27,6 @@ export default function PropertyMap({
   draft = null,
   onPick,
   onViewChange,
-  zoomOut = 0,
   insetLeft = 0,
   highlighted = null,
   onHover,
@@ -40,8 +39,6 @@ export default function PropertyMap({
   draft?: Point | null;
   onPick?: (point: Point) => void;
   onViewChange?: (view: MapView) => void;
-  /** Increment to zoom the map out a couple of levels. */
-  zoomOut?: number;
   /** Width in px of a panel floating over the map's left edge. */
   insetLeft?: number;
   /** Location to emphasise, e.g. while its list card is hovered. */
@@ -67,6 +64,7 @@ export default function PropertyMap({
   const pick = useRef(onPick);
   const viewChange = useRef(onViewChange);
   const inset = useRef(insetLeft);
+  const report = useRef<(() => void) | null>(null);
   // Read by clusterIcon when bubbles are drawn; set before effects run.
   isPartial.current = partial;
   inset.current = insetLeft;
@@ -108,6 +106,7 @@ export default function PropertyMap({
     };
     instance.on("moveend", reportView);
     reportView();
+    report.current = reportView;
     map.current = instance;
     // Nearby pins merge into a counted bubble; clicking one zooms in. At the
     // closest zoom every building gets its own pin, so pins never fan out.
@@ -244,6 +243,10 @@ export default function PropertyMap({
     }
   }, [focus?.key]);
   useEffect(() => {
+    // Showing or hiding the side panel changes how much of the map is visible.
+    report.current?.();
+  }, [insetLeft]);
+  useEffect(() => {
     // Redraw bubbles with or without "+" when the view becomes (in)complete.
     markers.current?.refreshClusters();
     applyHighlight(highlight.current);
@@ -265,10 +268,6 @@ export default function PropertyMap({
       ?.querySelector(".map-pin, .map-cluster")
       ?.classList.add("map-highlight");
   }
-  useEffect(() => {
-    // Only the places in view are loaded, so "show more" means widening the view.
-    if (zoomOut && map.current) map.current.zoomOut(2);
-  }, [zoomOut]);
   useEffect(() => {
     const instance = map.current;
     if (!instance) return;

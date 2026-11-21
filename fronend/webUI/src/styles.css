@@ -663,14 +663,6 @@ svg {
   font-size: 14px;
   color: var(--ink-2);
 }
-.panel-tools {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  margin-top: 12px;
-}
 .list-sort {
   display: flex;
   align-items: center;
@@ -698,15 +690,6 @@ select {
 .results-body > .error,
 .results-body > .button {
   margin: 8px;
-}
-.area-summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 4px 10px 8px;
-  font-size: 14px;
-  color: var(--muted);
 }
 .property-list {
   display: flex;
@@ -1941,4 +1924,79 @@ select {
 }
 .locality-options .locality-heading:hover {
   background: none;
+}
+
+/* Hide / show the results panel to see more of the map. */
+.panel-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.panel-top .list-sort {
+  min-width: 0;
+}
+.panel-top .list-sort select {
+  max-width: 100%;
+}
+.hide-list {
+  flex: none;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.hide-list:hover {
+  border-color: var(--ink);
+}
+.show-list {
+  position: absolute;
+  top: var(--panel-gap);
+  left: var(--panel-gap);
+  /* Above Leaflet's tile, marker and popup panes (400–700), like the map hint. */
+  z-index: 800;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 0 18px;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow-lg);
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.hide-list:focus-visible,
+.show-list:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+@media (max-width: 860px) {
+  /* Phones: the map fills the screen and the button floats at the bottom. */
+  .explore.list-hidden .map-pane {
+    height: calc(100vh - var(--topbar));
+    height: calc(100dvh - var(--topbar));
+  }
+  .show-list {
+    top: auto;
+    left: 50%;
+    bottom: 16px;
+    transform: translateX(-50%);
+    white-space: nowrap;
+  }
 }

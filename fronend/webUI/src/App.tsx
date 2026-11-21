@@ -70,13 +70,28 @@ export default function App() {
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const [draft, setDraft] = useState<Point | null>(null);
   const [view, setView] = useState<MapView | null>(null);
-  const [zoomOut, setZoomOut] = useState(0);
   const [hovered, setHovered] = useState<string | null>(null);
   const [sort, setSort] = useState<Sort>("nearest");
   const [shown, setShown] = useState(PAGE_SIZE);
   const [flatsVersion, setFlatsVersion] = useState(0);
   // On wide screens the results card floats over the map's left side.
   const [inset, setInset] = useState(floatingInset);
+  // The visitor can hide the results/details panel to see more map.
+  const [listHidden, setListHidden] = useState(() => {
+    try {
+      return localStorage.getItem("rental-list-hidden") === "1";
+    } catch {
+      return false;
+    }
+  });
+  function toggleList(hidden: boolean) {
+    setListHidden(hidden);
+    try {
+      localStorage.setItem("rental-list-hidden", hidden ? "1" : "0");
+    } catch {
+      // Private mode: the choice just isn't remembered.
+    }
+  }
   useEffect(() => {
     const update = () => setInset(floatingInset());
     window.addEventListener("resize", update);
@@ -300,6 +315,8 @@ export default function App() {
     setDraft(null);
     setMoving(false);
     setSelected(location);
+    // Opening a place always shows its details, even if the list was hidden.
+    if (listHidden) toggleList(false);
     // Details replace the list in the side panel; start them from the top.
     if (panelRef.current) panelRef.current.scrollTop = 0;
   }
@@ -631,21 +648,24 @@ export default function App() {
           </footer>
         </main>
       ) : (
-        <main className="explore">
-          <div className="panel" id="panel" ref={panelRef}>
+        <main className={`explore ${listHidden ? "list-hidden" : ""}`}>
+          <div className="panel" id="panel" ref={panelRef} hidden={listHidden}>
             {!selected ? (
               <section
                 className="results"
                 aria-label="Properties, accessible alternative to the map"
               >
                 <div className="panel-head">
-                  <p className="panel-count" aria-live="polite">
-                    {loading
-                      ? "Loading…"
-                      : `${plural(visible.length, "place")}${more ? "+" : ""} in this area · ${plural(totalReviews, "experience")}`}
-                  </p>
-                  <div className="panel-tools">
-                    {!loading && visible.length > 1 ? (
+                  <div className="panel-top">
+                    {/* Not shown, but announced so screen-reader users hear the
+                        list change as the map moves. */}
+                    <p className="panel-count sr-only" aria-live="polite">
+                      {loading
+                        ? "Loading…"
+                        : `${plural(visible.length, "place")}${more ? "+" : ""} in this area · ${plural(totalReviews, "experience")}`}
+                    </p>
+                    {/* Sort on the left, Hide list on the right, one row. */}
+                    {!loading && visible.length > 1 && (
                       <label className="list-sort">
                         <span className="sr-only">Sort by</span>
                         <select
@@ -657,17 +677,15 @@ export default function App() {
                           <option value="rating">Highest rated</option>
                         </select>
                       </label>
-                    ) : (
-                      <span />
                     )}
                     <button
-                      className="button secondary small"
-                      onClick={() => {
-                        setSelected(null);
-                        setDraft(view?.center || DEFAULT_CENTER.center);
-                      }}
+                      className="hide-list"
+                      onClick={() => toggleList(true)}
+                      aria-controls="panel"
+                      aria-label="Hide list"
+                      title="Hide list"
                     >
-                      <Icon name="plus" size={16} /> Add a place
+                      <Icon name="close" size={18} />
                     </button>
                   </div>
                 </div>
@@ -693,22 +711,10 @@ export default function App() {
                       <Icon name="pin" size={28} />
                       <h3>No places in this area</h3>
                       <p>
-                        Move or zoom out the map, or tap the map to add a place
+                        Move the map to another area, or tap it to add a place
                         here.
                       </p>
-                      <button
-                        className="button secondary small"
-                        onClick={() => setZoomOut((n) => n + 1)}
-                      >
-                        Zoom out
-                      </button>
                     </div>
-                  )}
-                  {!loading && more && (
-                    <p className="area-summary">
-                      Showing the first {formatCount(locations.length)} places
-                      here. Zoom in to see every building.
-                    </p>
                   )}
                   {!loading && listed.length > 0 && (
                     <ul className="property-list">
@@ -782,9 +788,20 @@ export default function App() {
                 className="detail"
                 aria-label="Selected property details"
               >
-                <button className="back-link" onClick={closeDetails}>
-                  <Icon name="back" size={18} /> Back to results
-                </button>
+                <div className="panel-top">
+                  <button className="back-link" onClick={closeDetails}>
+                    <Icon name="back" size={18} /> Back to results
+                  </button>
+                  <button
+                    className="hide-list"
+                    onClick={() => toggleList(true)}
+                    aria-controls="panel"
+                    aria-label="Hide details"
+                    title="Hide details"
+                  >
+                    <Icon name="close" size={18} />
+                  </button>
+                </div>
                 <header className="detail-head">
                   <h2>{selected.building_name || "Rental property"}</h2>
                   <p>
@@ -973,12 +990,24 @@ export default function App() {
               }}
               onViewChange={setView}
               partial={more}
-              zoomOut={zoomOut}
-              insetLeft={inset}
+              insetLeft={listHidden ? 0 : inset}
               focus={focus}
               highlighted={hovered}
               onHover={setHovered}
             />
+            {listHidden && (
+              <button
+                className="show-list"
+                onClick={() => toggleList(false)}
+                aria-controls="panel"
+                aria-expanded="false"
+              >
+                <Icon name="list" size={18} />
+                {selected
+                  ? "Show details"
+                  : `Show list · ${plural(visible.length, "place")}${more ? "+" : ""}`}
+              </button>
+            )}
             {!draft && (
               <p className="map-hint">
                 <Icon name="pin" size={14} /> Tap a pin to read reviews · tap
