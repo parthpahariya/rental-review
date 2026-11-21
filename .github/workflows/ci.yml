@@ -25,7 +25,8 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:17-alpine
+        # Same PostgreSQL as production (postgres-platform) and meal-manager.
+        image: postgres:18.6-bookworm
         env:
           POSTGRES_DB: rental_test
           POSTGRES_USER: rental
@@ -85,12 +86,21 @@ jobs:
       COMPOSE_PROJECT_NAME: rental-review-ci
       WEB_PORT: 8080
       API_PORT: 8000
+      # Branch of github.com/parthpahariya/postgres-platform to test against.
+      PLATFORM_REF: main
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Shared PostgreSQL (postgres-platform, cloned beside the app)
+        run: |
+          git clone --quiet --depth 1 --branch "$PLATFORM_REF" \
+            https://github.com/parthpahariya/postgres-platform.git ../postgres-platform
+          python3.13 ../postgres-platform/bin/ensure-db rental_review
       - run: docker compose config --quiet
       - name: Validate deployment scripts and production configuration
         env:
-          POSTGRES_PASSWORD: validation-only-password
           SECRET_KEY: validation-only-secret-key-that-is-long-enough
           GOOGLE_CLIENT_IDS: validation-only.apps.googleusercontent.com
         run: |
@@ -168,7 +178,6 @@ jobs:
       GCP_VM_HOST: ${{ vars.GCP_VM_HOST }}
       GCP_VM_USER: ${{ vars.GCP_VM_USER }}
       GOOGLE_CLIENT_IDS: ${{ vars.GOOGLE_CLIENT_IDS }}
-      POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
       SECRET_KEY: ${{ secrets.SECRET_KEY }}
       GCP_SSH_PRIVATE_KEY: ${{ secrets.GCP_SSH_PRIVATE_KEY }}
       GCP_SSH_KNOWN_HOSTS: ${{ secrets.GCP_SSH_KNOWN_HOSTS }}

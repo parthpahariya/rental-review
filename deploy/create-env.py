@@ -6,7 +6,7 @@ import re
 import sys
 from pathlib import Path
 
-REQUIRED = ("POSTGRES_PASSWORD", "SECRET_KEY", "GOOGLE_CLIENT_IDS")
+REQUIRED = ("SECRET_KEY", "GOOGLE_CLIENT_IDS")
 
 
 def check(name, value):
@@ -14,8 +14,6 @@ def check(name, value):
         raise SystemExit(f"Set {name} in the CI/CD production environment.")
     if "\n" in value or "\r" in value:
         raise SystemExit(f"{name} must be a single-line value.")
-    if name == "POSTGRES_PASSWORD" and not re.fullmatch(r"[A-Za-z0-9_-]{16,}", value):
-        raise SystemExit("POSTGRES_PASSWORD must be 16+ URL-safe characters (A-Z a-z 0-9 _ -).")
     if name == "SECRET_KEY" and (len(value) < 32 or value.startswith("local-development")):
         raise SystemExit("SECRET_KEY must be a private random value of 32+ characters.")
     if name == "GOOGLE_CLIENT_IDS" and not all(
