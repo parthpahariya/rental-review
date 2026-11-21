@@ -6,6 +6,95 @@ import { setToken } from "./api";
 import { scrollToListEnd } from "./test-setup";
 
 const mapView: { current: unknown } = { current: null };
+/** Stands in for Google Places; tests set what each call returns. */
+const googlePlaces = vi.hoisted(() => ({
+  autocomplete: vi.fn(),
+  tokens: 0,
+}));
+/** Which map provider the server reports; tests switch it per case. */
+const mapProvider = vi.hoisted(() => ({ current: "google" as "google" | "osm" }));
+vi.mock("./maps/config", () => ({
+  mapConfig: () =>
+    Promise.resolve({
+      provider: mapProvider.current,
+      api_key: mapProvider.current === "google" ? "test-key" : null,
+      map_id: null,
+    }),
+}));
+vi.mock("./maps/google/loader", () => ({
+  loadGoogleMaps: () =>
+    Promise.resolve({
+      mapId: "test-map",
+      places: {
+        AutocompleteSessionToken: class {
+          id = ++googlePlaces.tokens;
+        },
+        AutocompleteSuggestion: {
+          fetchAutocompleteSuggestions: (request: unknown) =>
+            googlePlaces.autocomplete(request),
+        },
+      },
+    }),
+}));
+
+type FakePlace = {
+  name: string;
+  lat: number;
+  lng: number;
+  types: string[];
+  /** [west, south, east, north] */
+  viewport?: [number, number, number, number];
+};
+const latLng = (lat: number, lng: number) => ({
+  lat: () => lat,
+  lng: () => lng,
+});
+function fakePlace(p: FakePlace) {
+  const [west, south, east, north] = p.viewport ?? [];
+  return {
+    displayName: p.name,
+    types: p.types,
+    location: latLng(p.lat, p.lng),
+    viewport: p.viewport && {
+      getSouthWest: () => latLng(south!, west!),
+      getNorthEast: () => latLng(north!, east!),
+    },
+    fetchFields: vi.fn(() => Promise.resolve({})),
+  };
+}
+function suggestion(p: FakePlace, secondary: string) {
+  const place = fakePlace(p);
+  return {
+    placePrediction: {
+      mainText: { text: p.name },
+      secondaryText: { text: secondary },
+      text: { text: `${p.name}, ${secondary}` },
+      types: p.types,
+      placeId: `place-${p.name}`,
+      toPlace: () => place,
+    },
+    place,
+  };
+}
+const indiranagar = suggestion(
+  {
+    name: "Indiranagar",
+    lat: 12.9784,
+    lng: 77.6408,
+    types: ["sublocality_level_1", "sublocality", "political"],
+    viewport: [77.62, 12.96, 77.66, 12.99],
+  },
+  "Bengaluru, Karnataka, India",
+);
+const prestige = suggestion(
+  {
+    name: "Prestige Shantiniketan",
+    lat: 12.9886,
+    lng: 77.7287,
+    types: ["premise", "establishment"],
+  },
+  "Whitefield, Bengaluru, Karnataka, India",
+);
 vi.mock("./Map", async () => {
   const { useEffect } = await import("react");
   return {
@@ -79,6 +168,9 @@ function result(data: unknown, list = true) {
 }
 
 beforeEach(() => {
+  mapProvider.current = "google";
+  googlePlaces.autocomplete.mockReset();
+  googlePlaces.autocomplete.mockResolvedValue({ suggestions: [] });
   // Every test starts at the home page with a clean address bar and no
   // remembered preferences (such as a hidden results list).
   window.history.replaceState(null, "", "/");
@@ -143,6 +235,80 @@ describe("Rental Review", () => {
   });
 
   it("asks for a locality before showing the map", async () => {
+    googlePlaces.autocomplete.mockResolvedValue({
+      suggestions: [indiranagar, prestige],
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    expect(
+      screen.queryByLabelText(/Interactive rental location map/),
+    ).not.toBeInTheDocument();
+    await user.type(
+      screen.getByRole("combobox", { name: /Search for a locality/ }),
+      "Indira",
+    );
+    const option = await screen.findByRole("option", { name: /^Indiranagar/ });
+    expect(screen.getByText("Powered by Google")).toBeInTheDocument();
+    const request = googlePlaces.autocomplete.mock.calls.at(-1)![0];
+    expect(request).toMatchObject({
+      input: "Indira",
+      includedRegionCodes: ["in"],
+      // Biased towards Bengaluru (no location shared in the test).
+      locationBias: { center: { lat: 12.955, lng: 77.63 }, radius: 50000 },
+    });
+    await user.click(option);
+    expect(
+      await screen.findByLabelText(/Interactive rental location map/),
+    ).toBeInTheDocument();
+    // The chosen area shows in the topbar, next to the profile.
+    expect(
+      screen.getByRole("button", { name: "Area: Indiranagar. Change area" }),
+    ).toHaveTextContent("Indiranagar");
+    expect(indiranagar.place.fetchFields).toHaveBeenCalled();
+  });
+
+  it("finds buildings and keeps one search session until a pick", async () => {
+    googlePlaces.autocomplete.mockResolvedValue({
+      suggestions: [prestige],
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    const box = screen.getByRole("combobox", { name: /Search for a locality/ });
+    await user.type(box, "Pres");
+    await screen.findByRole("option", { name: /^Prestige Shantiniketan/ });
+    await user.type(box, "tige");
+    await waitFor(() =>
+      expect(googlePlaces.autocomplete).toHaveBeenCalledTimes(2),
+    );
+    const [first, second] = googlePlaces.autocomplete.mock.calls.map(
+      ([r]) => r.sessionToken,
+    );
+    // Keystrokes in one search share a token, so Google bills one session.
+    expect(second).toBe(first);
+    await user.click(
+      await screen.findByRole("option", { name: /^Prestige Shantiniketan/ }),
+    );
+    expect(
+      await screen.findByRole("button", {
+        name: "Area: Prestige Shantiniketan. Change area",
+      }),
+    ).toBeInTheDocument();
+    expect(prestige.place.fetchFields).toHaveBeenCalled();
+    // A new search after the pick starts a new session.
+    await user.type(
+      screen.getByRole("combobox", { name: /Search for a locality/ }),
+      "Indira",
+    );
+    await waitFor(() =>
+      expect(googlePlaces.autocomplete).toHaveBeenCalledTimes(3),
+    );
+    expect(googlePlaces.autocomplete.mock.calls[2][0].sessionToken).not.toBe(
+      first,
+    );
+  });
+
+  it("searches OpenStreetMap when the server picks it", async () => {
+    mapProvider.current = "osm";
     const photon = {
       features: [
         {
@@ -174,9 +340,6 @@ describe("Rental Review", () => {
     );
     const user = userEvent.setup();
     render(<App />);
-    expect(
-      screen.queryByLabelText(/Interactive rental location map/),
-    ).not.toBeInTheDocument();
     await user.type(
       screen.getByRole("combobox", { name: /Search for a locality/ }),
       "Indira",
@@ -190,79 +353,36 @@ describe("Rental Review", () => {
     expect(
       screen.queryByRole("option", { name: /Indira Lane/ }),
     ).not.toBeInTheDocument();
-    await user.click(localities[0]);
     expect(
-      screen.getByLabelText(/Interactive rental location map/),
+      screen.getByText("Search © OpenStreetMap contributors"),
     ).toBeInTheDocument();
-    // The chosen area shows in the topbar, next to the profile.
-    expect(
-      screen.getByRole("button", { name: "Area: Indiranagar. Change area" }),
-    ).toHaveTextContent("Indiranagar");
+    expect(googlePlaces.autocomplete).not.toHaveBeenCalled();
     const geocode = vi
       .mocked(fetch)
       .mock.calls.map(([url]) => String(url))
       .find((url) => url.startsWith("https://photon.komoot.io/api/"));
     expect(geocode).toContain("q=Indira");
     expect(geocode).toContain("bbox=68.1%2C6.5%2C97.5%2C35.7");
-    // Ranked by distance from Bengaluru (no location shared in the test).
     expect(geocode).toContain("lat=12.9550");
-    expect(geocode).toContain("lon=77.6300");
+    await user.click(localities[0]);
+    expect(
+      await screen.findByRole("button", {
+        name: "Area: Indiranagar. Change area",
+      }),
+    ).toBeInTheDocument();
   });
 
-  it("suggests nearby areas before anything is typed", async () => {
-    const nearby = {
-      features: [
-        {
-          geometry: { coordinates: [77.6245, 12.9352] },
-          properties: {
-            name: "Koramangala",
-            type: "district",
-            city: "Bengaluru",
-            countrycode: "IN",
-          },
-        },
-        {
-          geometry: { coordinates: [77.6101, 12.9166] },
-          properties: {
-            name: "BTM Layout",
-            type: "district",
-            city: "Bengaluru",
-            countrycode: "IN",
-          },
-        },
-      ],
-    };
-    const base = fetch as unknown as (input: string) => Promise<Response>;
-    vi.stubGlobal(
-      "fetch",
-      vi.fn((input: string) =>
-        input.startsWith("https://photon.komoot.io/reverse")
-          ? Promise.resolve(new Response(JSON.stringify(nearby)))
-          : base(input),
-      ),
-    );
+  it("asks Google nothing until the visitor types", async () => {
     const user = userEvent.setup();
     render(<App />);
     await user.click(
       screen.getByRole("combobox", { name: /Search for a locality/ }),
     );
-    expect(await screen.findByText("Areas in Bengaluru")).toBeInTheDocument();
-    const options = screen.getAllByRole("option");
-    expect(options.map((o) => o.textContent)).toEqual([
-      expect.stringContaining("Koramangala"),
-      expect.stringContaining("BTM Layout"),
-    ]);
-    const reverse = vi
-      .mocked(fetch)
-      .mock.calls.map(([url]) => String(url))
-      .find((url) => url.startsWith("https://photon.komoot.io/reverse"));
-    expect(reverse).toContain("lat=12.9550");
-    expect(reverse).toContain("layer=district");
-    // Picking one opens the map there.
-    await user.click(options[0]);
-    expect(
-      screen.getByRole("button", { name: "Area: Koramangala. Change area" }),
-    ).toBeInTheDocument();
+    await user.keyboard("Ind");
+    // Three letters are not enough to search, and the empty box lists nothing.
+    await new Promise((r) => setTimeout(r, 500));
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    expect(googlePlaces.autocomplete).not.toHaveBeenCalled();
   });
 
   it("lets the visitor hide the results list and bring it back", async () => {
@@ -291,15 +411,45 @@ describe("Rental Review", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("suggests localities only, never buildings", async () => {
+  it("lists buildings already on Rental Review first, without Google", async () => {
+    googlePlaces.autocomplete.mockResolvedValue({ suggestions: [prestige] });
+    const user = userEvent.setup();
+    render(<App />);
+    await user.type(
+      screen.getByRole("combobox", { name: /Search for a locality/ }),
+      "Parkside",
+    );
+    const listed = await screen.findByRole("option", {
+      name: /^Parkside Residences.*On Rental Review/,
+    });
+    // Too few listed matches, so Google fills in below them.
+    expect(
+      await screen.findByRole("option", { name: /^Prestige Shantiniketan/ }),
+    ).toBeInTheDocument();
+    expect(screen.getAllByRole("option")[0]).toBe(listed);
+    const urls = vi.mocked(fetch).mock.calls.map(([url]) => String(url));
+    expect(urls.some((u) => u.includes("q=Parkside"))).toBe(true);
+    await user.click(listed);
+    expect(
+      await screen.findByRole("button", {
+        name: "Area: Parkside Residences. Change area",
+      }),
+    ).toBeInTheDocument();
+    // Picking a listed building needs no paid Google lookup.
+    expect(prestige.place.fetchFields).not.toHaveBeenCalled();
+  });
+
+  it("skips Google when enough listed buildings match", async () => {
+    const towers = ["North", "South", "East"].map((side, i) => ({
+      ...location,
+      id: `tower-${i}`,
+      building_name: `${side} Tower`,
+    }));
     vi.stubGlobal(
       "fetch",
-      vi.fn(
-        ((base) => (input: string) =>
-          input.startsWith("https://photon.komoot.io/")
-            ? Promise.resolve(new Response(JSON.stringify({ features: [] })))
-            : base(input))(
-          fetch as unknown as (input: string) => Promise<Response>,
+      vi.fn((input: string) =>
+        Promise.resolve(
+          result(input.includes("q=Tower") ? towers : []),
         ),
       ),
     );
@@ -307,17 +457,28 @@ describe("Rental Review", () => {
     render(<App />);
     await user.type(
       screen.getByRole("combobox", { name: /Search for a locality/ }),
-      "Parkside",
+      "Tower",
     );
     expect(
-      await screen.findByText(/No localities in India match “Parkside”/),
-    ).toBeInTheDocument();
+      await screen.findAllByRole("option", { name: /Tower.*On Rental Review/ }),
+    ).toHaveLength(3);
+    expect(googlePlaces.autocomplete).not.toHaveBeenCalled();
+    expect(screen.queryByText("Powered by Google")).not.toBeInTheDocument();
+  });
+
+  it("says when nothing matches and when suggestions fail", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    const box = screen.getByRole("combobox", { name: /Search for a locality/ });
+    await user.type(box, "Unknown");
     expect(
-      screen.queryByRole("option", { name: /Parkside Residences/ }),
-    ).not.toBeInTheDocument();
-    // The server's building search is no longer called from the search box.
-    const urls = vi.mocked(fetch).mock.calls.map(([url]) => String(url));
-    expect(urls.some((u) => u.includes("q=Parkside"))).toBe(false);
+      await screen.findByText(/No places in India match “Unknown”/),
+    ).toBeInTheDocument();
+    googlePlaces.autocomplete.mockRejectedValue(new Error("quota"));
+    await user.type(box, "x");
+    expect(
+      await screen.findByText("Place suggestions are unavailable right now."),
+    ).toBeInTheDocument();
   });
 
   it("explains when Google sign-in is not configured and offers no phone login", async () => {

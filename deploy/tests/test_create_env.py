@@ -15,7 +15,8 @@ GOOD = {
 
 
 def run(**overrides):
-    env = {k: v for k, v in os.environ.items() if k not in GOOD}
+    env = {k: v for k, v in os.environ.items()
+           if k not in GOOD and not k.startswith("GOOGLE_MAPS_") and k != "MAP_PROVIDER"}
     env.update({k: v for k, v in {**GOOD, **overrides}.items() if v is not None})
     with tempfile.TemporaryDirectory() as tmp:
         out = Path(tmp) / ".env"
@@ -41,6 +42,18 @@ class CreateEnvTest(unittest.TestCase):
         settings = [line for line in content.splitlines() if not line.startswith("#")]
         self.assertFalse([line for line in settings if "${" in line])
         self.assertEqual(mode, 0o600)
+
+    def test_maps_settings_are_optional(self):
+        result, content, _ = run(GOOGLE_MAPS_API_KEY=None, GOOGLE_MAPS_MAP_ID=None)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('GOOGLE_MAPS_API_KEY=""', content)
+        result, content, _ = run(GOOGLE_MAPS_API_KEY="AIza-key", GOOGLE_MAPS_MAP_ID="map1")
+        self.assertIn('GOOGLE_MAPS_API_KEY="AIza-key"', content)
+        self.assertIn('GOOGLE_MAPS_MAP_ID="map1"', content)
+        result, content, _ = run(MAP_PROVIDER="osm")
+        self.assertIn('MAP_PROVIDER="osm"', content)
+        result, _, _ = run(MAP_PROVIDER="mapbox")
+        self.assertNotEqual(result.returncode, 0)
 
     def test_rejects_missing_or_unsafe_values(self):
         for overrides in (

@@ -607,6 +607,16 @@ svg {
   color: var(--muted);
   cursor: default;
 }
+.locality-options li.locality-attribution {
+  min-height: 0;
+  justify-content: flex-end;
+  padding-top: 4px;
+  padding-bottom: 6px;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--muted);
+  cursor: default;
+}
 .locality-actions {
   display: flex;
   flex-wrap: wrap;
@@ -1007,6 +1017,23 @@ select {
 }
 
 /* Map */
+.property-map {
+  font: inherit;
+}
+/* Google provider: its map lives in this element, kept across visits. */
+.property-map-canvas {
+  position: absolute;
+  inset: 0;
+}
+/* Google anchors markers at their bottom centre (Leaflet uses iconAnchor):
+   leave room for the pin's pointer, and centre bubbles on their spot. */
+.property-map-canvas .map-pin {
+  margin-bottom: 6px;
+}
+.property-map-canvas .map-cluster {
+  translate: 0 50%;
+}
+/* OpenStreetMap provider (Leaflet) */
 .leaflet-container {
   font: inherit;
   background: #ece7dc;
@@ -1034,6 +1061,20 @@ select {
 }
 .leaflet-control-attribution {
   font-size: 11px;
+}
+
+/* Shown in place of the map when Google Maps can't load. */
+.map-unavailable {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  padding: 24px;
+  padding-left: calc(var(--panel-w) + var(--panel-gap) * 2);
+  color: var(--muted);
+  font-size: 15px;
+  text-align: center;
 }
 .map-hint,
 .draft-card {
@@ -1077,6 +1118,7 @@ select {
   font-family: var(--font-display);
   font-size: 14px;
   font-weight: 700;
+  cursor: pointer;
   transition: transform 0.18s var(--ease);
 }
 .map-pin::after {
@@ -1104,6 +1146,7 @@ select {
   cursor: grab;
 }
 .map-cluster {
+  cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1511,6 +1554,12 @@ select {
   .map-hint {
     display: none;
   }
+  /* The panel is a bottom sheet here, so centre the message in the map area. */
+  .map-unavailable {
+    padding: 24px 16px;
+    place-items: start center;
+    padding-top: 30vh;
+  }
   .draft-card {
     left: 16px;
     right: 16px;
@@ -1912,20 +1961,6 @@ select {
   }
 }
 
-/* "Areas near you" heading above the nearby suggestions. */
-.locality-options .locality-heading {
-  padding: 10px 14px 4px;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--muted);
-  cursor: default;
-}
-.locality-options .locality-heading:hover {
-  background: none;
-}
-
 /* Hide / show the results panel to see more of the map. */
 .panel-top {
   display: flex;
@@ -1964,7 +1999,7 @@ select {
   position: absolute;
   top: var(--panel-gap);
   left: var(--panel-gap);
-  /* Above Leaflet's tile, marker and popup panes (400–700), like the map hint. */
+  /* Above the map and its markers, like the map hint. */
   z-index: 800;
   display: inline-flex;
   align-items: center;

@@ -1,128 +1,42 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Icon } from "./components";
-import type { Bounds, Point } from "./Map";
+import { api, type List, type Location } from "./api";
+import { loadMapProvider } from "./maps/provider";
+import { REGION } from "./maps/region";
+import type { Area, PlaceSearch, Point, Suggestion } from "./maps/types";
 
-/** Where the map should open: a locality, a single place, or everything. */
-export type Area = {
-  name: string;
-  detail?: string;
-  center: Point;
-  bounds?: Bounds;
-  zoom?: number;
-};
+export type { Area, Suggestion } from "./maps/types";
+export { DEFAULT_CENTER, REGION } from "./maps/region";
 
-// Locality suggestions cover India. The map still opens on Bengaluru by default,
-// where the demo properties are.
-export const REGION = {
-  name: "India",
-  countryCode: "IN",
-  bbox: "68.1,6.5,97.5,35.7",
-};
-export const DEFAULT_CENTER = {
-  name: "Bengaluru",
-  center: { latitude: 12.955, longitude: 77.63 },
-};
-const GEOCODER = "https://photon.komoot.io/api/";
-const REVERSE_GEOCODER = "https://photon.komoot.io/reverse";
+/** Search waits for this many letters; shorter text rarely finds anything. */
+export const MIN_SEARCH = 4;
+/** Pause in typing (ms) before searching, so each keystroke isn't a request. */
+const TYPING_PAUSE = 400;
+/** The map provider's search is skipped when this many listed buildings match. */
+const ENOUGH_LISTED = 3;
 
-type PhotonFeature = {
-  geometry: { coordinates: [number, number] };
-  properties: {
-    name?: string;
-    type?: string;
-    city?: string;
-    county?: string;
-    state?: string;
-    countrycode?: string;
-    extent?: [number, number, number, number];
-  };
-};
-
-/**
- * Localities matching `text`. With `near`, the geocoder ranks matches by
- * distance from that point, so "Na" near JP Nagar gives Nagarabhavi, not Nagpur.
- */
-export async function searchLocalities(
-  text: string,
-  signal?: AbortSignal,
-  near?: Point,
-): Promise<Area[]> {
+/** Buildings already on Rental Review whose name or address matches: free. */
+export async function searchListed(text: string): Promise<Suggestion[]> {
   const params = new URLSearchParams({
     q: text,
-    // Ask for extra: some results are dropped as duplicates or outside India.
-    limit: "15",
-    lang: "en",
-    bbox: REGION.bbox,
+    reviewed_only: "false",
+    limit: "5",
   });
-  if (near) {
-    params.set("lat", near.latitude.toFixed(4));
-    params.set("lon", near.longitude.toFixed(4));
-  }
-  for (const layer of ["locality", "district", "city"])
-    params.append("layer", layer);
-  const response = await fetch(`${GEOCODER}?${params}`, { signal });
-  if (!response.ok) throw new Error("Locality search is unavailable.");
-  const body: { features: PhotonFeature[] } = await response.json();
-  return toAreas(body.features).slice(0, 8);
-}
-
-/**
- * Neighbourhoods around a point, nearest first, for the empty search box.
- * The "district" layer holds neighbourhoods; "locality" is mostly apartment
- * complexes, so it is left out here.
- */
-export async function nearbyLocalities(
-  near: Point,
-  signal?: AbortSignal,
-): Promise<Area[]> {
-  const params = new URLSearchParams({
-    lat: near.latitude.toFixed(4),
-    lon: near.longitude.toFixed(4),
-    limit: "10",
-    radius: "5",
-    lang: "en",
-    layer: "district",
+  const { data } = await api<List<Location>>(`/locations?${params}`);
+  return data.map((l) => {
+    const name = l.building_name || l.address;
+    const area: Area = {
+      name,
+      center: { latitude: l.latitude, longitude: l.longitude },
+      zoom: 18,
+    };
+    return {
+      name,
+      detail: l.building_name ? `On Rental Review · ${l.address}` : "On Rental Review",
+      kind: "listed",
+      resolve: () => Promise.resolve(area),
+    };
   });
-  const response = await fetch(`${REVERSE_GEOCODER}?${params}`, { signal });
-  if (!response.ok) throw new Error("Nearby areas are unavailable.");
-  const body: { features: PhotonFeature[] } = await response.json();
-  return toAreas(body.features).slice(0, 6);
-}
-
-function toAreas(features: PhotonFeature[]): Area[] {
-  const areas: Area[] = [];
-  for (const { geometry, properties: p } of features) {
-    if (!p.name) continue;
-    // The bounding box also covers parts of neighbouring countries.
-    if (p.countrycode && p.countrycode !== REGION.countryCode) continue;
-    const [longitude, latitude] = geometry.coordinates;
-    const center = { latitude, longitude };
-    // OpenStreetMap often lists one locality twice, e.g. as a suburb and as
-    // an administrative district a short distance apart.
-    if (
-      areas.some(
-        (a) =>
-          a.name.toLowerCase() === p.name!.toLowerCase() &&
-          Math.abs(a.center.latitude - latitude) < 0.03 &&
-          Math.abs(a.center.longitude - longitude) < 0.03,
-      )
-    )
-      continue;
-    const detail = [p.city || p.county, p.state]
-      .filter((x) => x && x !== p.name)
-      .join(", ");
-    const e = p.extent;
-    areas.push({
-      name: p.name,
-      detail,
-      center,
-      bounds: e
-        ? { west: e[0], north: e[1], east: e[2], south: e[3] }
-        : undefined,
-      zoom: p.type === "city" ? 12 : 15,
-    });
-  }
-  return areas;
 }
 
 export default function LocalitySearch({
@@ -130,20 +44,17 @@ export default function LocalitySearch({
   onBrowseAll,
   compact = false,
   near,
-  nearLabel = "Areas nearby",
 }: {
   onArea: (area: Area) => void;
   onBrowseAll: () => void;
   /** Suggestions favour areas around this point (your location or the map's). */
   near?: Point;
-  /** Heading for the nearby list shown before anything is typed. */
-  nearLabel?: string;
   /** Slim version for the app bar, without the extra links. */
   compact?: boolean;
 }) {
   const id = useId();
   const [text, setText] = useState("");
-  const [areas, setAreas] = useState<Area[]>([]);
+  const [areas, setAreas] = useState<Suggestion[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [open, setOpen] = useState(false);
@@ -154,47 +65,51 @@ export default function LocalitySearch({
   // Read when a request starts, so moving the map doesn't restart typing.
   const nearRef = useRef(near);
   nearRef.current = near;
+  // The map provider's search (Google or OpenStreetMap), made on first use.
+  const search = useRef<PlaceSearch | null>(null);
+  const [attribution, setAttribution] = useState("");
   useEffect(() => {
     setAreas([]);
     setError("");
-    if (term.length < 2) return;
-    const controller = new AbortController();
-    // Wait for a pause in typing before asking the geocoder.
-    const timer = setTimeout(() => {
+    if (term.length < MIN_SEARCH) return;
+    // Results for text the visitor has since changed are dropped.
+    let live = true;
+    // Wait for a pause in typing, then look in Rental Review first (free) and
+    // ask the map provider (Google is billed) only when too few listed
+    // buildings match.
+    const timer = setTimeout(async () => {
       setBusy(true);
-      searchLocalities(term, controller.signal, nearRef.current)
-        .then(setAreas)
-        .catch((e) => {
-          if (e.name !== "AbortError")
-            setError("Locality suggestions are unavailable right now.");
-        })
-        .finally(() => setBusy(false));
-    }, 300);
+      const listed = await searchListed(term).catch(() => []);
+      if (!live) return;
+      setAreas(listed);
+      try {
+        if (listed.length >= ENOUGH_LISTED) return;
+        const provider = await loadMapProvider();
+        search.current ??= provider.createSearch();
+        const found = await search.current.search(term, nearRef.current);
+        if (!live) return;
+        setAttribution(provider.searchAttribution);
+        const names = new Set(listed.map((l) => l.name.toLowerCase()));
+        setAreas([
+          ...listed,
+          ...found.filter((f) => !names.has(f.name.toLowerCase())),
+        ]);
+      } catch {
+        if (live && !listed.length)
+          setError("Place suggestions are unavailable right now.");
+      } finally {
+        if (live) setBusy(false);
+      }
+    }, TYPING_PAUSE);
     return () => {
+      live = false;
       clearTimeout(timer);
-      controller.abort();
+      setBusy(false);
     };
   }, [term]);
-  // Before anything is typed, suggest the neighbourhoods around `near`.
-  // Rounded to ~1 km so panning the map doesn't refetch on every move.
-  const nearKey = near
-    ? `${near.latitude.toFixed(2)},${near.longitude.toFixed(2)}`
-    : "";
-  const [nearby, setNearby] = useState<Area[]>([]);
-  useEffect(() => {
-    setNearby([]);
-    if (!open || !nearRef.current) return;
-    const controller = new AbortController();
-    nearbyLocalities(nearRef.current, controller.signal)
-      .then(setNearby)
-      .catch(() => {
-        // Typing still searches; the nearby list is a convenience.
-      });
-    return () => controller.abort();
-  }, [nearKey, open]);
-  // Suggestions are localities only; buildings are found on the map.
-  const showingNearby = term.length < 2;
-  const options = showingNearby ? nearby : areas;
+  // Nothing is suggested until something is typed: a list of nearby areas
+  // would cost a paid Google lookup every time the box is opened.
+  const options = term.length < MIN_SEARCH ? [] : areas;
   useEffect(() => setActive(-1), [term, options.length]);
   useEffect(() => {
     if (active >= 0)
@@ -202,9 +117,20 @@ export default function LocalitySearch({
         .getElementById(optionId(active))
         ?.scrollIntoView({ block: "nearest" });
   }, [active]);
-  function choose(area: Area) {
+  const [opening, setOpening] = useState(false);
+  function choose(option: Suggestion) {
     setOpen(false);
-    onArea(area);
+    setOpening(true);
+    setError("");
+    option
+      .resolve()
+      .then(onArea)
+      .catch(() => setError("We couldn’t open that place. Try another."))
+      .finally(() => {
+        setOpening(false);
+        // The pick ends the provider's search session (Google bills by it).
+        search.current?.finish();
+      });
   }
   function useMyLocation() {
     if (!navigator.geolocation) {
@@ -234,7 +160,7 @@ export default function LocalitySearch({
       { timeout: 10000, maximumAge: 300000 },
     );
   }
-  const showList = open && (term.length >= 2 || nearby.length > 0);
+  const showList = open && term.length >= MIN_SEARCH;
   const optionId = (i: number) => `${id}-option-${i}`;
   return (
     <div className={`locality-search ${compact ? "compact" : ""}`}>
@@ -257,11 +183,12 @@ export default function LocalitySearch({
             type="search"
             role="combobox"
             autoComplete="off"
-            aria-label="Search for a locality or neighbourhood"
+            aria-label="Search for a locality or building"
+            aria-busy={opening}
             aria-expanded={showList}
             aria-controls={`${id}-list`}
             aria-activedescendant={active >= 0 ? optionId(active) : undefined}
-            placeholder="Search a locality"
+            placeholder="Search a locality or building"
             value={text}
             onChange={(e) => {
               setText(e.target.value);
@@ -298,13 +225,8 @@ export default function LocalitySearch({
             className="locality-options"
             id={`${id}-list`}
             role="listbox"
-            aria-label={showingNearby ? nearLabel : "Matching localities"}
+            aria-label="Matching places"
           >
-            {showingNearby && (
-              <li className="locality-heading" role="presentation">
-                {nearLabel}
-              </li>
-            )}
             {options.map((area, i) => (
               <li
                 key={`${area.name}-${i}`}
@@ -315,7 +237,16 @@ export default function LocalitySearch({
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => choose(area)}
               >
-                <Icon name="pin" size={16} />
+                <Icon
+                  name={
+                    area.kind === "listed"
+                      ? "star"
+                      : area.kind === "building"
+                        ? "home"
+                        : "pin"
+                  }
+                  size={16}
+                />
                 <span>
                   {area.name}
                   <small>{area.detail}</small>
@@ -324,12 +255,17 @@ export default function LocalitySearch({
             ))}
             {busy && (
               <li className="locality-status" role="status">
-                Finding localities…
+                Finding places…
               </li>
             )}
-            {!showingNearby && !busy && !error && !options.length && (
+            {!busy && !error && !options.length && (
               <li className="locality-status" role="status">
-                No localities in {REGION.name} match “{term}”.
+                No places in {REGION.name} match “{term}”.
+              </li>
+            )}
+            {attribution && options.some((o) => o.kind !== "listed") && (
+              <li className="locality-attribution" role="presentation">
+                {attribution}
               </li>
             )}
           </ul>
