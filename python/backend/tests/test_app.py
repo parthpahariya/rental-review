@@ -313,6 +313,31 @@ def place_payload(**changes):
     }
 
 
+def test_locations_store_only_map_neutral_data():
+    """Stored places must work with any map provider (Google, OpenStreetMap):
+    plain WGS84 degrees and what users typed, never a provider's ids or data."""
+    from app.models import Location
+
+    assert {c.name for c in Location.__table__.columns} == {
+        "id",
+        "address",
+        "building_name",
+        "latitude",
+        "longitude",
+        "created_by",
+        "created_at",
+        "updated_at",
+    }
+
+
+def test_new_pin_rejects_provider_fields(client, auth):
+    for field in ("place_id", "google_place_id", "osm_id", "zoom", "viewport"):
+        response = client.post(
+            "/api/v1/locations", headers=auth, json=place_payload(**{field: "x"})
+        )
+        assert response.status_code == 422, field
+
+
 def test_new_pin_creates_location_and_flat_for_reviews(client, auth):
     assert client.post("/api/v1/locations", json=place_payload()).status_code == 401
     response = client.post("/api/v1/locations", headers=auth, json=place_payload())
