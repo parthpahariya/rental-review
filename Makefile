@@ -1,6 +1,9 @@
 DOCKER ?= docker
 COMPOSE = $(DOCKER) compose
-COLIMA_PROFILE ?= rental-review
+# One VM for every workspace app, so they share one shared-postgres container.
+COLIMA_PROFILE ?= default
+COLIMA_MEMORY ?= 8
+COLIMA_CPUS ?= 4
 COLIMA_CONTEXT = $(if $(filter default,$(COLIMA_PROFILE)),colima,colima-$(COLIMA_PROFILE))
 # Production on the shared Google Cloud VM; run by deploy/bootstrap-vm.sh.
 PRODUCTION = $(COMPOSE) -f compose.yaml -f compose.production.yaml
@@ -11,7 +14,7 @@ PLATFORM_REF ?= main
 PYTHON ?= python3.13
 export PLATFORM_DIR
 
-.PHONY: db db-read up down full_up full_down watch logs test test-backend test-web smoke clean-test deploy deploy-status
+.PHONY: db db-read up down full_up full_down vm_down vm_resize watch logs test test-backend test-web smoke clean-test deploy deploy-status
 
 db: ## Start the shared PostgreSQL if needed; create this app's database and roles if missing
 	@test -d "$(PLATFORM_DIR)" || git clone --branch "$(PLATFORM_REF)" "$(PLATFORM_REPO)" "$(PLATFORM_DIR)"
@@ -21,7 +24,7 @@ db-read: ## Open a read-only psql on the shared database (as rental_review_reade
 	$(DOCKER) exec -it shared-postgres psql -U rental_review_reader -d rental_review
 
 up: db
-	$(COMPOSE) up --build -d --wait --wait-timeout 180
+	$(COMPOSE) up --build -d --wait --wait-timeout 180 --remove-orphans
 
 watch:
 	$(COMPOSE) watch --no-up backend web
@@ -29,37 +32,48 @@ watch:
 down:
 	$(COMPOSE) down
 
+# The Colima VM is shared with the other workspace apps and shared-postgres, so full_up and
+# full_down never restart it; use vm_down / vm_resize for that.
 full_up:
-	colima start --profile "$(COLIMA_PROFILE)"
+	@colima status --profile "$(COLIMA_PROFILE)" >/dev/null 2>&1 || \
+		colima start --profile "$(COLIMA_PROFILE)" --memory "$(COLIMA_MEMORY)" --cpus "$(COLIMA_CPUS)"
+	docker context use $(COLIMA_CONTEXT)
 	$(MAKE) up DOCKER_CONTEXT="$(COLIMA_CONTEXT)"
 
 full_down:
-	@status=0; \
-	if colima status --profile "$(COLIMA_PROFILE)" >/dev/null 2>&1; then \
-		$(MAKE) down DOCKER_CONTEXT="$(COLIMA_CONTEXT)" || status=$$?; fi; \
-	colima stop --profile "$(COLIMA_PROFILE)" || status=$$?; exit $$status
+	@if colima status --profile "$(COLIMA_PROFILE)" >/dev/null 2>&1; then \
+		$(MAKE) down DOCKER_CONTEXT="$(COLIMA_CONTEXT)"; \
+	else echo "Colima profile $(COLIMA_PROFILE) is already stopped."; fi
+
+vm_down:
+	colima stop --profile "$(COLIMA_PROFILE)"
+
+vm_resize:
+	colima stop --profile "$(COLIMA_PROFILE)"
+	colima start --profile "$(COLIMA_PROFILE)" --memory "$(COLIMA_MEMORY)" --cpus "$(COLIMA_CPUS)"
+	docker context use $(COLIMA_CONTEXT)
 
 logs:
-	docker compose logs -f --tail=100
+	$(COMPOSE) logs -f --tail=100
 
 test: test-backend test-web
 
 test-backend:
-	docker compose -p rental-review-test -f compose.yaml -f compose.test.yaml up -d --wait db
-	docker compose -p rental-review-test -f compose.yaml -f compose.test.yaml build backend
-	docker compose -p rental-review-test -f compose.yaml -f compose.test.yaml run --rm backend alembic upgrade head
-	docker compose -p rental-review-test -f compose.yaml -f compose.test.yaml run --rm backend alembic check
-	docker compose -p rental-review-test -f compose.yaml -f compose.test.yaml run --rm backend ruff check .
-	docker compose -p rental-review-test -f compose.yaml -f compose.test.yaml run --rm backend pytest -q
+	$(COMPOSE) -p rental-review-test -f compose.yaml -f compose.test.yaml up -d --wait db
+	$(COMPOSE) -p rental-review-test -f compose.yaml -f compose.test.yaml build backend
+	$(COMPOSE) -p rental-review-test -f compose.yaml -f compose.test.yaml run --rm backend alembic upgrade head
+	$(COMPOSE) -p rental-review-test -f compose.yaml -f compose.test.yaml run --rm backend alembic check
+	$(COMPOSE) -p rental-review-test -f compose.yaml -f compose.test.yaml run --rm backend ruff check .
+	$(COMPOSE) -p rental-review-test -f compose.yaml -f compose.test.yaml run --rm backend pytest -q
 
 test-web:
 	cd fronend/webUI && npm ci && npm test && npm run build
 
 smoke:
-	python3 scripts/smoke.py "http://$$(docker compose port web 8080)"
+	python3 scripts/smoke.py "http://$$($(COMPOSE) port web 8080)"
 
 clean-test:
-	docker compose -p rental-review-test -f compose.yaml -f compose.test.yaml down --volumes --remove-orphans
+	$(COMPOSE) -p rental-review-test -f compose.yaml -f compose.test.yaml down --volumes --remove-orphans
 
 deploy: db
 	$(PRODUCTION) config --quiet
