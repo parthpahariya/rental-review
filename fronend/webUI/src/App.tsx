@@ -517,7 +517,6 @@ export default function App() {
               onArea={openArea}
               onBrowseAll={browseAll}
               near={searchNear}
-              nearLabel="Areas near the map centre"
             />
           </div>
         )}
@@ -579,11 +578,6 @@ export default function App() {
                 onArea={openArea}
                 onBrowseAll={browseAll}
                 near={searchNear}
-                nearLabel={
-                  userPoint
-                    ? "Areas near you"
-                    : `Areas in ${DEFAULT_CENTER.name}`
-                }
               />
             </div>
           </section>

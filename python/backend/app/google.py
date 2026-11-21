@@ -60,6 +60,26 @@ def providers():
     return {"data": {"google_client_id": audiences[0] if audiences else None}}
 
 
+@router.get("/map/config")
+def map_config():
+    """Which map provider the web app uses, and for Google its browser key (public
+    by design) and map ID."""
+    settings = get_settings()
+    provider = settings.map_provider or ("google" if settings.google_maps_api_key else "osm")
+    if provider == "osm":
+        return {"data": {"provider": "osm", "api_key": None, "map_id": None}}
+    map_id = settings.google_maps_map_id or (
+        "DEMO_MAP_ID" if settings.app_env != "production" else ""
+    )
+    return {
+        "data": {
+            "provider": "google",
+            "api_key": settings.google_maps_api_key or None,
+            "map_id": map_id or None,
+        }
+    }
+
+
 @router.post("/auth/google")
 def google_sign_in(
     body: GoogleBody, request: Request, response: Response, db: DbSession = Depends(get_db)

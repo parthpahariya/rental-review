@@ -96,6 +96,10 @@ Google is the only way to sign in; there is no password or phone sign-in. Accoun
 
 `200`: `{ "data": { "google_client_id": string|null } }`. Null when the server has no `GOOGLE_CLIENT_IDS` configured; clients then hide the Google button.
 
+### `GET /map/config` — Public
+
+`200`: `{ "data": { "provider": "google"|"osm", "api_key": string|null, "map_id": string|null } }`. `provider` is `MAP_PROVIDER`, or when that is unset `google` if `GOOGLE_MAPS_API_KEY` is set and `osm` otherwise. For `google`, `api_key` is the Maps browser key (public by design; restrict it by HTTP referrer) and `map_id` is `GOOGLE_MAPS_MAP_ID`, falling back to `DEMO_MAP_ID` outside production. For `osm` both are null.
+
 ### `POST /auth/google` — Public
 
 Request: `{ "credential": string, "reactivate": boolean = false }`, where `credential` is the ID token returned by Google Identity Services. The server verifies its RS256 signature against Google's published keys, `aud` ∈ configured client ids, `iss` ∈ {`accounts.google.com`, `https://accounts.google.com`}, expiry, and `email_verified: true`. Accounts are keyed on the token's `sub`; `email` is refreshed on every sign-in.

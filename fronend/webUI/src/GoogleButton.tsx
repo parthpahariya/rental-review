@@ -26,21 +26,28 @@ type Gis = {
     };
   };
 };
-declare global {
-  interface Window {
-    google?: Gis;
-  }
+/**
+ * Google Maps also lives on `window.google`, so sign-in is only ready once
+ * `google.accounts` exists.
+ */
+function gisOnPage(): Gis | null {
+  const google = (window as { google?: Partial<Gis> }).google;
+  return google?.accounts ? (google as Gis) : null;
 }
 
 let script: Promise<Gis> | null = null;
 function loadGis(): Promise<Gis> {
-  if (window.google) return Promise.resolve(window.google);
+  const ready = gisOnPage();
+  if (ready) return Promise.resolve(ready);
   script ??= new Promise<Gis>((resolve, reject) => {
     const tag = document.createElement("script");
     tag.src = "https://accounts.google.com/gsi/client";
     tag.async = true;
-    tag.onload = () =>
-      window.google ? resolve(window.google) : reject(new Error("no gis"));
+    tag.onload = () => {
+      const gis = gisOnPage();
+      if (gis) resolve(gis);
+      else reject(new Error("no gis"));
+    };
     tag.onerror = () => {
       script = null; // Allow a retry the next time the dialog opens.
       reject(new Error("Google sign-in could not load."));

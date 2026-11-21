@@ -7,9 +7,14 @@ import sys
 from pathlib import Path
 
 REQUIRED = ("SECRET_KEY", "GOOGLE_CLIENT_IDS")
+# May be left unset; an empty value is written.
+OPTIONAL = ("MAP_PROVIDER", "GOOGLE_MAPS_API_KEY", "GOOGLE_MAPS_MAP_ID")
+NAMES = REQUIRED + OPTIONAL
 
 
 def check(name, value):
+    if not value and name in OPTIONAL:
+        return
     if not value:
         raise SystemExit(f"Set {name} in the CI/CD production environment.")
     if "\n" in value or "\r" in value:
@@ -20,12 +25,14 @@ def check(name, value):
         part.strip().endswith(".apps.googleusercontent.com") for part in value.split(",")
     ):
         raise SystemExit("GOOGLE_CLIENT_IDS must be Google OAuth client ids, comma-separated.")
+    if name == "MAP_PROVIDER" and value not in ("google", "osm"):
+        raise SystemExit('MAP_PROVIDER must be "google", "osm" or unset.')
 
 
 def main():
     template, output = map(Path, sys.argv[1:])
     values = {}
-    for name in REQUIRED:
+    for name in NAMES:
         value = os.environ.get(name, "")
         check(name, value)
         # Compose reads escapes inside double quotes; $$ keeps a literal $.
@@ -37,9 +44,9 @@ def main():
         return values[match[1]]
 
     content = re.sub(
-        r"\$\{(" + "|".join(REQUIRED) + r")\}", substitute, template.read_text(encoding="utf-8")
+        r"\$\{(" + "|".join(NAMES) + r")\}", substitute, template.read_text(encoding="utf-8")
     )
-    missing = set(REQUIRED) - replaced
+    missing = set(NAMES) - replaced
     if missing:
         raise SystemExit("Missing placeholders in the template: " + ", ".join(sorted(missing)))
     os.umask(0o077)
