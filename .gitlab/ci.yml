@@ -128,9 +128,9 @@ deploy:
     url: https://rentalreview.boringman.in
   resource_group: production
   variables:
-    DEPLOY_BRANCH: topic/parth/plan
+    DEPLOY_BRANCH: main
   rules:
-    - if: '$CI_COMMIT_BRANCH == "topic/parth/plan" && ($CI_PIPELINE_SOURCE == "push" || $CI_PIPELINE_SOURCE == "web")'
+    - if: '$CI_COMMIT_BRANCH == "main" && ($CI_PIPELINE_SOURCE == "push" || $CI_PIPELINE_SOURCE == "web")'
   before_script:
     - apk add --no-cache bash openssh-client
   script:

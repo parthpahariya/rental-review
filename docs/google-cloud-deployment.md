@@ -3,7 +3,7 @@
 rental-review deploys the same way as meal-manager, onto **the same VM**:
 
 ```
-push to topic/parth/plan
+push to main
   └─ backend, frontend, compose-smoke checks pass
        └─ deploy job ── SSH ──▶ VM
             ~/rental-review   git checkout of the exact tested commit
@@ -51,10 +51,10 @@ from meal-manager's and only install or change rental-review's own files.
    `python3 -c "import secrets; print(secrets.token_urlsafe(32))"`. Keep
    `POSTGRES_PASSWORD` stable after the first deploy: changing it does not change
    the existing database's password. Optionally limit the environment's deployment
-   branches to `topic/parth/plan`.
+   branches to `main`.
 
    GitLab: set the same names as CI/CD variables (the SSH key and known hosts as
-   **file** variables) and protect the `topic/parth/plan` branch.
+   **file** variables) and protect the `main` branch.
 
 The first deploy installs nothing new on the VM except rental-review's Nginx site
 and certificate, because Docker, Nginx and Certbot are already there from meal-manager.
