@@ -15,7 +15,8 @@ push to main
 | | meal-manager | rental-review |
 | --- | --- | --- |
 | Checkout | `~/meal-manager` | `~/rental-review` |
-| Compose project | `meal-manager` | `rental-review` (database volume `rental-review_postgres_v1_data`) |
+| Compose project | `meal-manager` | `rental-review` |
+| Database | Its own `postgres` container | Shared `shared-postgres` (postgres-platform, with wardrobe-manager); database `rental_review` |
 | Web container on loopback | `127.0.0.1:4173` | `127.0.0.1:4180` |
 | Nginx site | `conf.d/meal-manager.conf`, the `default_server` | `conf.d/rental-review.conf`, matched by name only |
 | Domain and certificate | `mealmanagers.online` | `rentalreview.boringman.in` |
@@ -44,14 +45,13 @@ from meal-manager's and only install or change rental-review's own files.
    | Variable | `GOOGLE_CLIENT_IDS` | The OAuth web client id (`….apps.googleusercontent.com`) |
    | Secret | `GCP_SSH_PRIVATE_KEY` | Same private key as meal-manager's deploy key |
    | Secret | `GCP_SSH_KNOWN_HOSTS` | Same verified known-hosts line as meal-manager |
-   | Secret | `POSTGRES_PASSWORD` | New random value, 16+ chars of `A-Z a-z 0-9 _ -` |
    | Secret | `SECRET_KEY` | New random value, 32+ chars |
 
-   Generate the two new values with
-   `python3 -c "import secrets; print(secrets.token_urlsafe(32))"`. Keep
-   `POSTGRES_PASSWORD` stable after the first deploy: changing it does not change
-   the existing database's password. Optionally limit the environment's deployment
-   branches to `main`.
+   Generate `SECRET_KEY` with
+   `python3 -c "import secrets; print(secrets.token_urlsafe(48))"`. There is no
+   database secret: the shared PostgreSQL's passwords are generated on the VM by
+   postgres-platform (`~/postgres-platform/credentials/`). Optionally limit the
+   environment's deployment branches to `main`.
 
    GitLab: set the same names as CI/CD variables (the SSH key and known hosts as
    **file** variables) and protect the `main` branch.
@@ -78,3 +78,31 @@ cd ~/rental-review
 make deploy-status                                                   # containers + health
 docker compose -f compose.yaml -f compose.production.yaml logs -f --tail=100
 ```
+
+## Shared PostgreSQL (postgres-platform)
+
+The database runs in the `shared-postgres` container from
+[postgres-platform](https://github.com/parthpahariya/postgres-platform), checked out at
+`~/postgres-platform` (the deploy clones or fast-forwards it). `make deploy` first runs its
+`ensure-db rental_review`, which starts the container if needed and creates the database and
+roles if missing. The API connects as `rental_review_writer`; migrations run as
+`rental_review_owner`.
+
+### One-time move from the old per-app database
+
+Do this once, by hand, before the first deploy of this change. Downtime is a few minutes.
+
+```sh
+# On the VM
+git clone https://github.com/parthpahariya/postgres-platform.git ~/postgres-platform
+python3.13 ~/postgres-platform/bin/ensure-db rental_review        # empty database + roles
+
+cd ~/rental-review
+sudo docker compose -f compose.yaml -f compose.production.yaml stop backend web
+sudo docker exec rental-review-db-1 pg_dump -Fc -U rental rental_review > ~/rental_review.dump
+python3.13 ~/postgres-platform/bin/import-dump rental_review ~/rental_review.dump
+```
+
+Then push (or re-run) the deploy. Afterwards, check the row counts against the old database.
+Keep `rental-review-db-1`'s volume `rental-review_postgres_v1_data` for a week as a rollback.
+`--remove-orphans` removes the old container, but never volumes. Then delete it.

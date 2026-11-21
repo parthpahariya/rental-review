@@ -126,6 +126,20 @@ git merge --ff-only FETCH_HEAD
     exit 1
 }
 unset GIT_ASKPASS RENTAL_REVIEW_TOKEN_FILE RENTAL_REVIEW_GIT_USERNAME
+
+# The shared PostgreSQL (github.com/parthpahariya/postgres-platform, public) sits beside
+# this checkout. `make deploy` runs its ensure-db, which starts it if needed and creates
+# rental_review's database and roles if missing. Its passwords are generated here, in the
+# platform's ignored .env and credentials/ files, never in Git or CI.
+platform_dir="$HOME/postgres-platform"
+# The platform's own lock keeps this safe while wardrobe-manager deploys at the same time.
+flock -w 300 "$HOME/.postgres-platform.lock" bash -euc '
+    if [[ ! -d "$1/.git" ]]; then
+        git clone --quiet --branch main https://github.com/parthpahariya/postgres-platform.git "$1"
+    else
+        git -C "$1" fetch --quiet origin main
+        git -C "$1" merge --quiet --ff-only FETCH_HEAD
+    fi' _ "$platform_dir"
 rm -f "$bundle_dir/git-askpass" "$bundle_dir/repo-token"
 
 install -m 600 "$bundle_dir/backend.env" "$project_dir/.env"

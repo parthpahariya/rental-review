@@ -9,7 +9,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 GOOD = {
-    "POSTGRES_PASSWORD": "Strong_password-12345",
     "SECRET_KEY": "s" * 48,
     "GOOGLE_CLIENT_IDS": "123-abc.apps.googleusercontent.com",
 }
@@ -34,7 +33,8 @@ class CreateEnvTest(unittest.TestCase):
     def test_fills_placeholders_and_keeps_defaults(self):
         result, content, mode = run(SECRET_KEY="a$b" + "x" * 40)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn('POSTGRES_PASSWORD="Strong_password-12345"', content)
+        # The database credentials come from postgres-platform, not this file.
+        self.assertNotIn("POSTGRES", content)
         self.assertIn('SECRET_KEY="a$$b', content)  # $ escaped for Compose
         self.assertIn("APP_ENV=production", content)
         self.assertIn("SEED_DEMO_DATA=false", content)
@@ -44,9 +44,7 @@ class CreateEnvTest(unittest.TestCase):
 
     def test_rejects_missing_or_unsafe_values(self):
         for overrides in (
-            {"POSTGRES_PASSWORD": None},
-            {"POSTGRES_PASSWORD": "has@symbol-in-it!!"},
-            {"POSTGRES_PASSWORD": "short"},
+            {"SECRET_KEY": None},
             {"SECRET_KEY": "too-short"},
             {"SECRET_KEY": "local-development-only-change-before-deployment"},
             {"GOOGLE_CLIENT_IDS": "not-a-client-id"},

@@ -11,12 +11,13 @@ loads a million reviews in a minute or two instead of hours via the ORM.
 
 import argparse
 import math
+import os
 import random
 import time
 import uuid
 from datetime import date, datetime, timedelta, timezone
 
-from sqlalchemy import select, text
+from sqlalchemy import create_engine, select, text
 
 from .database import SessionLocal, engine
 from .models import ProofPolicy
@@ -259,7 +260,10 @@ def seed(reviews, seed_value):
     finally:
         raw.close()
 
-    with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+    # ANALYZE needs the table owner; the API's writer login cannot run it.
+    owner_url = os.environ.get("MIGRATION_DATABASE_URL")
+    stats_engine = create_engine(owner_url) if owner_url else engine
+    with stats_engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
         for table in ("users", "locations", "flats", "tenant_reviews", "interaction_reviews"):
             conn.execute(text(f"ANALYZE {table}"))
     print(f"Done in {time.monotonic() - started:.0f}s.")

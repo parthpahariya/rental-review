@@ -1,3 +1,5 @@
+import os
+
 from alembic import context
 from sqlalchemy import create_engine, pool
 
@@ -7,10 +9,13 @@ from app.database import Base
 
 config = context.config
 target_metadata = Base.metadata
+# Migrations run as the schema owner when the shared database provides one; the API
+# itself connects as the writer (DATABASE_URL), which cannot change tables.
+url = os.environ.get("MIGRATION_DATABASE_URL") or get_settings().database_url
 
 if context.is_offline_mode():
     context.configure(
-        url=get_settings().database_url,
+        url=url,
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
@@ -18,7 +23,7 @@ if context.is_offline_mode():
     with context.begin_transaction():
         context.run_migrations()
 else:
-    engine = create_engine(get_settings().database_url, poolclass=pool.NullPool)
+    engine = create_engine(url, poolclass=pool.NullPool)
     with engine.connect() as connection:
         context.configure(connection=connection, target_metadata=target_metadata)
         with context.begin_transaction():
