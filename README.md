@@ -49,8 +49,9 @@ docker compose down          # Stops containers; preserves database and files
 For Colima, every workspace app (rental-review, wardrobe-manager) runs in the `default`
 profile (8 GiB / 4 CPUs), so they share one `shared-postgres` container. `make full_up`
 starts that VM if needed, makes it the current Docker context, and starts the stack;
-`make full_down` stops only this app. `make vm_down` stops the whole VM (every app),
-and `make vm_resize` restarts it to apply `COLIMA_MEMORY` / `COLIMA_CPUS`.
+`make full_down` stops only this app. The VM itself is managed from postgres-platform:
+`make -C ../postgres-platform colima_down` stops it (every app), and `colima_resize` restarts it
+to apply `COLIMA_MEMORY` / `COLIMA_CPUS`.
 
 After startup, run `make watch` to rebuild the backend and web UI when their source
 files change. Press Ctrl+C to stop watching; the stack keeps running.
