@@ -30,13 +30,13 @@ down:
 	$(COMPOSE) down
 
 # postgres-platform owns the shared Colima VM. full_up starts it only if it is stopped;
-# stop or resize it there (make -C $(PLATFORM_DIR) colima_down / vm_resize), since that hits every app.
+# stop or resize it there (make -C $(PLATFORM_DIR) colima_down / colima_resize), since that hits every app.
 full_up: | $(PLATFORM_DIR)
 	$(MAKE) -C "$(PLATFORM_DIR)" colima_up
 	$(MAKE) up
 
 full_down: | $(PLATFORM_DIR)
-	@if $(MAKE) -s -C "$(PLATFORM_DIR)" vm_running; then $(MAKE) down; \
+	@if $(MAKE) -s -C "$(PLATFORM_DIR)" colima_running; then $(MAKE) down; \
 	else echo "The Colima VM is already stopped."; fi
 
 logs:
