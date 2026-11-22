@@ -1,18 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
-import {
-  api,
-  allPages,
-  downloadFile,
-  message,
-  patch,
-  post,
-  setToken,
-  upload,
-} from "./api";
+import { api, allPages, message, patch, post, setToken } from "./api";
 import type {
   Account,
-  Attachment,
   Deletion,
   Flat,
   Interaction,
@@ -185,17 +175,16 @@ export function FeedbackCard({
     >
       <header className="review-card-head">
         <span className="avatar" aria-hidden="true">
-          {item.owner_name.trim().charAt(0).toUpperCase()}
+          <Icon name={isReview ? "home" : "chat"} size={16} />
         </span>
         <span className="review-who">
-          <span className="review-label">Owner</span>
-          <strong>{item.owner_name}</strong>
+          <strong>{isReview ? "Tenant review" : "Interaction"}</strong>
         </span>
         {own?.can_edit && (
           <button
             className="edit-review"
             onClick={() => onEdit(own)}
-            aria-label={`Edit your review of ${item.owner_name}`}
+            aria-label="Edit your review"
           >
             <Icon name="edit" size={14} /> Edit
           </button>
@@ -377,19 +366,6 @@ export function ReviewForm({
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [rating, setRating] = useState(review?.rating || 5);
-  const [proofRequired, setProofRequired] = useState(false);
-  const [policyLoaded, setPolicyLoaded] = useState(
-    kind === "interaction" || !!review,
-  );
-  useEffect(() => {
-    if (kind === "tenant" && !review)
-      api<{ data: { proof_required: boolean } }>("/review-submission-policy")
-        .then((r) => {
-          setProofRequired(r.data.proof_required);
-          setPolicyLoaded(true);
-        })
-        .catch((e) => setError(message(e)));
-  }, [kind, review]);
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError("");
@@ -402,31 +378,17 @@ export function ReviewForm({
           body: JSON.stringify({ rating, feedback: form.get("feedback") }),
         });
       } else {
-        const file = form.get("file") as File | null;
-        const ids = file?.size
-          ? [
-              await upload(
-                file,
-                kind === "tenant" ? "tenancy_proof" : "interaction_support",
-              ),
-            ]
-          : [];
-        const common = { owner_name: form.get("owner_name") };
         const body =
           kind === "tenant"
             ? {
-                ...common,
                 rating,
                 feedback: form.get("feedback"),
                 tenancy_start_date: form.get("start"),
                 tenancy_end_date: form.get("end"),
-                proof_file_ids: ids,
               }
             : {
-                ...common,
                 description: form.get("feedback"),
                 interaction_date: form.get("date"),
-                supporting_file_ids: ids,
               };
         await post(
           `/flats/${flat!.id}/${kind === "tenant" ? "tenant-reviews" : "interactions"}`,
@@ -454,20 +416,9 @@ export function ReviewForm({
       <p className="muted">
         {flat
           ? `${flat.location.building_name || flat.location.address} · Flat ${flat.label}`
-          : `Owner: ${review?.owner_name}`}
+          : "Change your rating or what you wrote."}
       </p>
       <form className="form-stack" onSubmit={submit}>
-        {!review && (
-          <label>
-            Owner’s name
-            <input
-              name="owner_name"
-              required
-              maxLength={200}
-              placeholder="The name of the owner you dealt with"
-            />
-          </label>
-        )}
         {kind === "tenant" && (
           <>
             <fieldset className="rating-input">
@@ -513,34 +464,18 @@ export function ReviewForm({
             required
             maxLength={10000}
             defaultValue={review?.feedback}
-            placeholder="Helpful details make a difference. Share what went well and what could be better."
+            placeholder="Describe your own experience of the flat: repairs, deposit, communication. Stick to facts, and don’t name people or share contact details."
           />
         </label>
-        {!review && (
-          <label>
-            {kind === "tenant"
-              ? `Proof of tenancy (${proofRequired ? "required" : "optional"})`
-              : "Supporting file (optional)"}
-            <input
-              type="file"
-              name="file"
-              accept="application/pdf,image/png,image/jpeg"
-              required={kind === "tenant" && proofRequired}
-            />
-            <small>
-              PDF, PNG, or JPEG · Up to 5 MB · Only you can access this file
-            </small>
-          </label>
-        )}
         <ErrorNotice error={error} />
-        <button className="button" disabled={busy || !policyLoaded}>
+        <button className="button" disabled={busy}>
           {busy ? "Saving…" : review ? "Save changes" : "Publish review"}
           <Icon name="arrow" size={18} />
         </button>
         <p className="fine-print">
           {kind === "tenant"
             ? "Reviews are published immediately. Ratings and feedback can be edited for 30 days; tenancy dates stay fixed."
-            : "One interaction review per person, per flat. Your review is public; supporting files stay private."}
+            : "One interaction review per person, per flat. It is published for everyone to read."}
         </p>
       </form>
     </Modal>
@@ -608,8 +543,6 @@ export function AccountPanel({
   const [deactivating, setDeactivating] = useState(false);
   const [editing, setEditing] = useState<Review | null>(null);
   const [requesting, setRequesting] = useState<Review | null>(null);
-  const [expanded, setExpanded] = useState<string | null>(null);
-  const [attachments, setAttachments] = useState<Attachment[]>([]);
   async function refresh() {
     setError("");
     try {
@@ -650,17 +583,6 @@ export function AccountPanel({
       setError(message(e));
     } finally {
       setBusy(false);
-    }
-  }
-  async function loadAttachments(id: string) {
-    setError("");
-    try {
-      setAttachments(
-        await allPages<Attachment>(`/interactions/${id}/attachments`),
-      );
-      setExpanded(id);
-    } catch (e) {
-      setError(message(e));
     }
   }
   if (editing)
@@ -826,9 +748,7 @@ export function AccountPanel({
                   }
                 />
               )}
-              <strong>
-                {review.owner_name} · {"★".repeat(review.rating)}
-              </strong>
+              <strong>{"★".repeat(review.rating)}</strong>
               <p>{review.feedback}</p>
               <small>
                 {review.deleted_at
@@ -873,73 +793,7 @@ export function AccountPanel({
                   }
                 />
               )}
-              <strong>{interaction.owner_name}</strong>
               <p>{interaction.description}</p>
-              <button
-                className="text-button"
-                onClick={() => void loadAttachments(interaction.id)}
-              >
-                Manage supporting files
-              </button>
-              {expanded === interaction.id && (
-                <div className="attachment-list">
-                  {attachments.map((attachment) => (
-                    <div key={attachment.id}>
-                      <button
-                        className="text-button"
-                        onClick={() =>
-                          void run(() =>
-                            downloadFile(
-                              attachment.file.id,
-                              attachment.file.original_filename,
-                            ),
-                          )
-                        }
-                      >
-                        {attachment.file.original_filename}
-                      </button>
-                      <button
-                        disabled={busy}
-                        className="text-button danger-text"
-                        onClick={() =>
-                          void run(async () => {
-                            await api(
-                              `/interactions/${interaction.id}/attachments/${attachment.id}`,
-                              { method: "DELETE" },
-                            );
-                            await loadAttachments(interaction.id);
-                          })
-                        }
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  ))}
-                  <label>
-                    Add a private supporting file
-                    <input
-                      type="file"
-                      accept="application/pdf,image/png,image/jpeg"
-                      disabled={busy}
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file)
-                          void run(async () => {
-                            const file_id = await upload(
-                              file,
-                              "interaction_support",
-                            );
-                            await post(
-                              `/interactions/${interaction.id}/attachments`,
-                              { file_id },
-                            );
-                            await loadAttachments(interaction.id);
-                          });
-                      }}
-                    />
-                  </label>
-                </div>
-              )}
             </article>
           ))}
           {requests.length > 0 && (
@@ -964,7 +818,9 @@ export function AccountPanel({
               )}
               {adminRequests.map((request) => (
                 <article className="account-record" key={request.id}>
-                  <strong>{request.review?.owner_name}</strong>
+                  <strong>
+                    {request.review && "★".repeat(request.review.rating)}
+                  </strong>
                   <p>{request.review?.feedback}</p>
                   <p>Reason: {request.reason}</p>
                   <div className="inline-actions">

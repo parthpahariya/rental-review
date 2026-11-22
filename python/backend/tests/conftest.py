@@ -11,20 +11,17 @@ from app import google
 from app.config import get_settings
 from app.database import Base, SessionLocal, engine
 from app.main import app
-from app.models import Flat, Location, ProofPolicy
+from app.models import Flat, Location
 
 
 @pytest.fixture(autouse=True)
-def clean_database(tmp_path, monkeypatch):
+def clean_database():
     settings = get_settings()
     if settings.app_env != "test" or not engine.url.database.endswith("_test"):
         pytest.fail("Integration tests require APP_ENV=test and a database ending in _test")
-    monkeypatch.setattr(settings, "upload_dir", tmp_path)
     with engine.begin() as connection:
         tables = ", ".join(f'"{table.name}"' for table in Base.metadata.sorted_tables)
         connection.execute(text(f"TRUNCATE {tables} CASCADE"))
-    with SessionLocal.begin() as db:
-        db.add(ProofPolicy(proof_required=False))
     yield
 
 

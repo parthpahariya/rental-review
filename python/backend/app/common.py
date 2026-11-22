@@ -122,7 +122,7 @@ def review_data(db, review):
 
     result = fields(
         review,
-        "id flat_id owner_name tenancy_start_date tenancy_end_date rating feedback submitted_at updated_at",
+        "id flat_id tenancy_start_date tenancy_end_date rating feedback submitted_at updated_at",
     )
     result.update(
         location_id=db.get(Flat, review.flat_id).location_id,
@@ -135,14 +135,8 @@ def interaction_data(db, row):
     from .models import Flat
 
     return dict(
-        fields(row, "id flat_id owner_name description interaction_date submitted_at"),
+        fields(row, "id flat_id description interaction_date submitted_at"),
         location_id=db.get(Flat, row.flat_id).location_id,
-    )
-
-
-def file_data(row):
-    return fields(
-        row, "id purpose original_filename media_type size_bytes status created_at updated_at"
     )
 
 

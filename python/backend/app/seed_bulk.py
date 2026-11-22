@@ -17,10 +17,9 @@ import time
 import uuid
 from datetime import date, datetime, timedelta, timezone
 
-from sqlalchemy import create_engine, select, text
+from sqlalchemy import create_engine, text
 
 from .database import SessionLocal, engine
-from .models import ProofPolicy
 
 PREFIX = "b10c5eed"
 KIND = {"user": 1, "location": 2, "flat": 3, "review": 4, "interaction": 5}
@@ -68,15 +67,6 @@ BUILDING_WORDS = (
     "Orchid Lotus Palm Emerald Golden Skyline Heritage Meadow Garden Shanti Sri Nandi"
 ).split()
 BUILDING_KINDS = ["Residency", "Apartments", "Enclave", "Heights", "Towers", "Homes", "Nest", "Court"]
-FIRST = (
-    "Aarav Aditi Akash Ananya Anil Anita Arjun Deepa Divya Gaurav Harish Kavya Kiran Lakshmi "
-    "Manoj Meera Naveen Neha Pooja Prakash Priya Rahul Ramesh Rohan Sanjay Shreya Sunita Suresh "
-    "Usha Vikram Vinod Yamini Ravi Geeta Mohan Lata Ajay Rekha Sunil Kamala"
-).split()
-LAST = (
-    "Rao Reddy Sharma Iyer Nair Menon Gowda Shetty Kumar Patel Gupta Hegde Pai Kulkarni "
-    "Joshi Bhat Naidu Krishnan Murthy Prasad Das Singh"
-).split()
 GOOD = [
     "Owner was responsive and fixed issues within a day or two.",
     "Deposit was returned in full and on time.",
@@ -111,10 +101,6 @@ def bulk_id(kind, n):
     return uuid.UUID(f"{PREFIX}-{KIND[kind]:04x}-4000-8000-{n:012x}")
 
 
-def person(rng):
-    return f"{rng.choice(FIRST)} {rng.choice(LAST)}"
-
-
 def places(rng, count):
     weights = [loc[4] for loc in LOCALITIES]
     taken = set()
@@ -147,10 +133,6 @@ def seed(reviews, seed_value):
         if db.scalar(text("SELECT 1 FROM locations WHERE id = :id"), {"id": bulk_id("location", 0)}):
             print("Bulk data already exists; run with --delete first.")
             return
-        policy = db.scalar(select(ProofPolicy).order_by(ProofPolicy.effective_from.desc()).limit(1))
-        if policy is None:
-            raise RuntimeError("Run alembic upgrade head first")
-        policy_id = policy.id
 
     # Shape: ~3.3 reviews per flat, ~2.5 flats per building, ~16 reviews per author.
     flats_needed = math.ceil(reviews / 3.3)
@@ -173,7 +155,7 @@ def seed(reviews, seed_value):
                                 joined, joined))
         print(f"users: {user_count:,}")
 
-        flat_rows = []  # (flat_id, owner_name, quality)
+        flat_rows = []  # (location number, created)
         with cur.copy("COPY locations (id, address, building_name, latitude, longitude, "
                       "created_at, updated_at) FROM STDIN") as copy:
             for n, (area, lat, lng) in enumerate(places(rng, location_count)):
@@ -200,14 +182,14 @@ def seed(reviews, seed_value):
                 for label in labels:
                     flat_id = bulk_id("flat", len(flats))
                     copy.write_row((flat_id, bulk_id("location", loc), label, created, created))
-                    # Each flat has one owner with a typical behaviour.
-                    flats.append((flat_id, person(rng), rng.choices([5, 4, 3, 2, 1],
-                                                                    [30, 35, 18, 10, 7])[0]))
+                    # Each flat has a typical quality its ratings cluster around.
+                    flats.append((flat_id, rng.choices([5, 4, 3, 2, 1],
+                                                       [30, 35, 18, 10, 7])[0]))
         print(f"flats: {len(flats):,}")
 
         written = 0
-        with cur.copy("COPY tenant_reviews (id, author_id, flat_id, owner_name, "
-                      "tenancy_start_date, tenancy_end_date, rating, feedback, proof_policy_id, "
+        with cur.copy("COPY tenant_reviews (id, author_id, flat_id, "
+                      "tenancy_start_date, tenancy_end_date, rating, feedback, "
                       "submitted_at, updated_at) FROM STDIN") as copy:
             order = list(range(len(flats)))
             rng.shuffle(order)
@@ -218,7 +200,7 @@ def seed(reviews, seed_value):
                 # Re-aim each flat so the total lands on the target count.
                 per_flat = remaining / (len(order) - i)
                 k = min(remaining, round(rng.expovariate(1 / per_flat)), 10)
-                flat_id, owner, quality = flats[f]
+                flat_id, quality = flats[f]
                 # Back-to-back, non-overlapping tenancies ending before today.
                 end = months(today, -rng.randint(0, 6))
                 for _ in range(k):
@@ -229,8 +211,8 @@ def seed(reviews, seed_value):
                         datetime.min.time(), timezone.utc) + timedelta(
                         seconds=rng.randint(0, 86_399))
                     copy.write_row((bulk_id("review", written),
-                                    bulk_id("user", rng.randrange(user_count)), flat_id, owner,
-                                    start, end, rating, feedback(rng, rating), policy_id,
+                                    bulk_id("user", rng.randrange(user_count)), flat_id,
+                                    start, end, rating, feedback(rng, rating),
                                     submitted, submitted))
                     written += 1
                     end = start - timedelta(days=rng.randint(0, 60))
@@ -239,15 +221,15 @@ def seed(reviews, seed_value):
         print(f"tenant reviews: {written:,}")
 
         interactions = 0
-        with cur.copy("COPY interaction_reviews (id, author_id, flat_id, owner_name, "
+        with cur.copy("COPY interaction_reviews (id, author_id, flat_id, "
                       "description, interaction_date, submitted_at) FROM STDIN") as copy:
-            for flat_id, owner, _ in flats:
+            for flat_id, _ in flats:
                 if rng.random() >= 0.35:
                     continue
                 for author in rng.sample(range(user_count), rng.randint(1, 2)):
                     day = today - timedelta(days=rng.randint(1, 900))
                     copy.write_row((bulk_id("interaction", interactions),
-                                    bulk_id("user", author), flat_id, owner,
+                                    bulk_id("user", author), flat_id,
                                     rng.choice(INTERACTIONS), day,
                                     datetime.combine(day, datetime.min.time(), timezone.utc)))
                     interactions += 1

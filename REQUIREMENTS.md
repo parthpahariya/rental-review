@@ -2,13 +2,13 @@
 
 ## Purpose
 
-Allow tenants to review rental property owners, allow users to record interactions with owners, and help users find reviews by clicking locations on a map. Each flat has separate Interactions and Tenant Reviews tabs for these two types of feedback.
+Allow tenants to review their experience of renting a flat, allow users to record interactions about a flat (viewings, enquiries, negotiations), and help users find reviews by clicking locations on a map. Reviews describe the tenancy and the flat; they never name or identify a person. Each flat has separate Interactions and Tenant Reviews tabs for these two types of feedback.
 
 ## Users
 
-- **Tenant:** Creates an account and submits reviews of rental property owners.
-- **User recording an interaction:** Creates an account and adds details of interactions with rental property owners, including interactions before becoming a tenant.
-- **Review reader:** Finds and reads owner reviews through the map.
+- **Tenant:** Creates an account and submits reviews of flats they rented.
+- **User recording an interaction:** Creates an account and adds details of interactions about a flat, including interactions before becoming a tenant.
+- **Review reader:** Finds and reads reviews through the map.
 - **Admin:** Reviews review-deletion requests and approves or rejects them.
 
 ## Functional requirements
@@ -25,8 +25,8 @@ Acceptance criteria:
 - Failed or cancelled Google sign-in produces clear feedback and can be retried.
 - Sign-in attempts are rate-limited, with clear feedback when a limit is reached.
 - Accounts created before phone sign-in was removed keep their reviews but can no longer sign in.
-- A user must be signed in to submit an owner review.
-- A user must be signed in to add an owner interaction.
+- A user must be signed in to submit a tenant review.
+- A user must be signed in to add an interaction.
 
 ### FR-02: Account deactivation and reactivation
 
@@ -45,29 +45,25 @@ Acceptance criteria:
 - Reactivation restores access to the same account and its existing reviews and interactions without creating a duplicate account.
 - Reactivation does not restart or extend the 30-day review editing window.
 
-### FR-04: Tenant reviews of owners
+### FR-04: Tenant reviews
 
-Tenants must be able to submit a rating and written review describing their experience with a rental property owner, and edit their own review for 30 days after its original submission.
+Tenants must be able to submit a rating and written review describing their experience of renting a flat, and edit their own review for 30 days after its original submission.
 
 Acceptance criteria:
 
-- A signed-in tenant must enter a nonblank owner name when posting a review. The name is stored on that review; owners are not stored on or linked to flats.
-- A tenant can optionally provide proof of tenancy for the flat being reviewed. Omitting proof does not prevent review submission under the current policy.
-- The proof-of-tenancy requirement must be configurable, defaulting to optional, so it can be made mandatory in the future without redesigning the review submission flow.
-- If the policy is changed to mandatory, new review submissions require proof of tenancy and show a clear validation error when it is missing.
+- Reviews name no person: there is no owner-name field, and the site stores no documents, ID numbers, phone numbers or payment details.
 - A review includes a rating, written feedback, and the tenancy period being reviewed, with required start and end dates, and is associated with the specific flat and its rental property location.
 - Dates use a start-inclusive, end-exclusive period: the end date must be later than the start date. A tenancy ending on the same date another begins is allowed.
-- Two different tenants cannot submit tenant reviews with overlapping tenancy periods for the same flat, even if they supply different owner names. A conflict produces a clear validation message and does not publish the new review.
+- Two different tenants cannot submit tenant reviews with overlapping tenancy periods for the same flat. A conflict produces a clear validation message and does not publish the new review.
 - This restriction applies across different author accounts, not multiple reviews by the same author, and does not apply to interaction reviews or reviews for different flats.
 - Conflict checks include existing tenant reviews by inactive authors and reviews with pending or rejected deletion requests. An admin-approved deleted review no longer blocks the period.
 - The server must enforce the conflict check atomically so concurrent submissions cannot create overlapping reviews by different tenants.
 - Ratings use a five-star scale, from 1 to 5 stars; missing or out-of-range ratings produce a clear validation error.
 - Missing required information produces a clear validation error.
-- A successfully submitted review is saved with the supplied owner name and can be retrieved for its flat and location.
+- A successfully submitted review is saved and can be retrieved for its flat and location.
 - Reviews are published immediately after successful submission, without prior admin approval.
 - Visitors can read tenant reviews and their ratings without creating an account or signing in.
-- The supplied owner name, tenancy period, and rating are displayed alongside the written feedback wherever the review is shown.
-- When an owner has multiple rental properties, each review remains associated with the property it concerns.
+- The tenancy period and rating are displayed alongside the written feedback wherever the review is shown.
 - Only the signed-in author with an active account can edit a review's rating and written feedback during the 30-day editing window. The tenancy dates remain fixed at submission.
 - The editing window starts at the original submission timestamp and closes when 30 days have elapsed. Editing a review does not reset or extend this window.
 - A successful edit updates the existing review, and subsequent retrievals show the updated rating and feedback.
@@ -77,38 +73,33 @@ Acceptance criteria:
 
 ### FR-05: Map-based review search
 
-Users must be able to find tenant reviews and interaction reviews of owners by clicking a rental property location on a map.
+Users must be able to find tenant reviews and interaction reviews by clicking a rental property location on a map.
 
 Acceptance criteria:
 
 - The application displays a map with selectable markers for rental locations that have tenant reviews, interaction reviews, or both. A location with only interaction reviews must also appear.
 - Visitors can browse the map and read its review results without an account.
-- Clicking or tapping a marker provides access to the Tenant Reviews and Interactions tabs for the selected flat, displaying the corresponding reviews and identifying the reviewed owner for each review.
+- Clicking or tapping a marker provides access to the Tenant Reviews and Interactions tabs for the selected flat, displaying the corresponding reviews.
 - Users can pan and zoom the map to explore other locations.
-- Each review displays its supplied owner name, including when reviews for the same flat or location name different owners. Matching names do not establish a shared owner identity.
 - Loading, empty results, and retrieval errors have clear feedback.
 
-### FR-06: Public interaction reviews of owners
+### FR-06: Public interaction reviews
 
-Users must be able to post public interaction reviews describing their interactions with a rental property owner, such as a property inquiry, viewing, maintenance request, or deposit discussion. This feature records feedback about an interaction.
+Users must be able to post public interaction reviews describing their interactions about a flat, such as a property inquiry, viewing, maintenance request, or deposit discussion. This feature records feedback about an interaction.
 
 Acceptance criteria:
 
-- A signed-in user must enter a nonblank owner name when posting an interaction review. The name is stored on that interaction review; no owner record or flat-owner link is required.
-- An interaction record includes the supplied owner name, a written description, and the date of the interaction. The owner name is displayed with the public interaction review.
+- An interaction record includes a written description and the date of the interaction.
 - Each interaction is associated with the specific flat it concerns.
-- A user can add an interaction without first submitting an owner review.
+- A user can add an interaction without first submitting a tenant review.
 - A user can post at most one interaction review per flat. The same user can review other flats, and different users can each post one interaction review for the same flat.
-- A second interaction review by the same user for the same flat is rejected with clear feedback, even if the owner name or interaction date differs. Concurrent submissions must not create duplicates.
-- Account deactivation/reactivation and supporting-file changes do not reset this limit. The author can continue managing supporting files on their existing interaction review.
+- A second interaction review by the same user for the same flat is rejected with clear feedback, even if the interaction date differs. Concurrent submissions must not create duplicates.
+- Account deactivation/reactivation does not reset this limit.
 - Missing required information produces a clear validation error.
 - A successfully posted interaction review is saved and visible to everyone in the relevant flat's Interactions tab, including visitors who are not signed in.
 - Interaction reviews are published immediately after successful submission, without prior admin approval.
 - Reading interaction reviews does not require an account; posting them requires a signed-in user with an active account.
 - Public interaction reviews must not expose the author's private account information, including their email.
-- A signed-in author with an active account can add supporting files to their own interaction review when posting it or afterward.
-- The author can delete supporting files from their own interaction review. Deleting a file removes its attachment from the review without deleting the interaction review itself.
-- Other users cannot add or delete supporting files on another author's interaction review.
 - Interaction reviews appear in map results for the associated flat, even when the flat has no tenant reviews.
 
 ### FR-07: Separate tabs for the same flat
@@ -117,13 +108,13 @@ Each flat's detail page must provide separate **Interactions** and **Tenant Revi
 
 Acceptance criteria:
 
-- Both tabs refer to the same selected flat. Each review identifies the owner using the name supplied by its author; the flat has no stored owner.
-- The Interactions tab lets users record their interactions with the owner about that flat, including interactions before becoming a tenant.
-- The Tenant Reviews tab lets tenants submit reviews of their experience with the owner while renting that flat.
-- Each tab displays its corresponding records and provides its own submission form with a required owner-name field. Both interaction reviews and tenant reviews are visible to everyone, including visitors without an account; submission requires sign-in.
+- Both tabs refer to the same selected flat.
+- The Interactions tab lets users record their interactions about that flat, including interactions before becoming a tenant.
+- The Tenant Reviews tab lets tenants submit reviews of their experience while renting that flat.
+- Each tab displays its corresponding records and provides its own submission form. Both interaction reviews and tenant reviews are visible to everyone, including visitors without an account; submission requires sign-in.
 - Switching tabs preserves the selected flat; users do not need to select it again.
 - Interactions and tenant reviews remain separate record types; submitting one does not require submitting the other.
-- Records for different flats remain separate, even when the flats share an owner or building location.
+- Records for different flats remain separate, even when the flats share a building location.
 
 ### FR-08: Request review deletion by an admin
 
@@ -147,7 +138,7 @@ Acceptance criteria:
 - Account management actions must be restricted to the account holder.
 - Credentials and account information must be protected; passwords, if used, must never be stored as plain text.
 - Email addresses must be treated as private account information, and Google credentials and session tokens must not appear in application logs or be stored as plain text.
-- Proof of tenancy must be kept private and must not be displayed with public reviews.
+- The site collects no proof of tenancy, documents, ID numbers, phone numbers or names of third parties.
 - Map results must not expose tenants' private account information.
 - Account, review, and interaction forms must work on mobile and desktop screens.
 - Map markers and review results must be accessible by keyboard, with a text-based way to access the same results.

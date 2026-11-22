@@ -11,8 +11,7 @@ COPY . .
 CMD ["pytest", "-q"]
 
 FROM base AS runtime
-RUN groupadd --gid 10001 app && useradd --uid 10001 --gid app --create-home app \
-    && mkdir -p /app/uploads && chown app:app /app/uploads
+RUN groupadd --gid 10001 app && useradd --uid 10001 --gid app --create-home app
 COPY --chown=app:app . .
 USER app
 EXPOSE 8000

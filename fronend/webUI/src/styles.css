@@ -1297,8 +1297,7 @@ select {
   gap: 18px;
   margin-top: 22px;
 }
-.form-stack label,
-.attachment-list label {
+.form-stack label {
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -1306,8 +1305,7 @@ select {
   font-weight: 600;
 }
 .form-stack input,
-.form-stack textarea,
-.attachment-list input {
+.form-stack textarea {
   width: 100%;
   min-height: 48px;
   padding: 10px 14px;
@@ -1334,11 +1332,6 @@ select {
   min-height: 128px;
   resize: vertical;
   line-height: 1.55;
-}
-.form-stack input[type="file"],
-.attachment-list input[type="file"] {
-  padding: 10px;
-  font-size: 14px;
 }
 .form-stack label small {
   font-size: 13px;
@@ -1490,12 +1483,6 @@ select {
   flex-wrap: wrap;
   gap: 4px 16px;
   margin-top: 8px;
-}
-.attachment-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 10px;
 }
 .badge {
   display: inline-block;
@@ -1814,13 +1801,6 @@ select {
   min-width: 0;
   display: grid;
   gap: 1px;
-}
-.review-card .review-label {
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--muted);
 }
 .review-card .review-who strong {
   font-size: 16px;

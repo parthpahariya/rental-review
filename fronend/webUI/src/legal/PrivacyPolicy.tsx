@@ -10,10 +10,10 @@ export default function PrivacyPolicy() {
   return (
     <LegalPage title="Privacy Policy">
       <p>
-        {SITE.name} ({SITE.url}) lets tenants share experiences of rented homes
-        and their owners. This policy explains what personal data we collect,
-        why, who can see it, and the choices you have. It is run by <Operator />
-        , who is responsible for your data. Contact: <Contact />.
+        {SITE.name} ({SITE.url}) lets tenants share experiences of rented homes.
+        This policy explains what personal data we collect, why, who can see it,
+        and the choices you have. It is run by <Operator />, who is responsible
+        for your data. Contact: <Contact />.
       </p>
 
       <h2>What we collect</h2>
@@ -31,23 +31,25 @@ export default function PrivacyPolicy() {
       <h3>What you post</h3>
       <ul>
         <li>
-          <strong>Tenant reviews:</strong> rating, written feedback, tenancy
-          start and end dates, and the owner’s name you enter.
+          <strong>Tenant reviews:</strong> rating, written feedback, and tenancy
+          start and end dates.
         </li>
         <li>
-          <strong>Interactions:</strong> a description, the date, and the
-          owner’s name you enter.
+          <strong>Interactions:</strong> a description and the date.
         </li>
         <li>
           <strong>Places you add:</strong> building name, address, flat label
           and the map position you pin.
         </li>
         <li>
-          <strong>Files you upload</strong> (optional tenancy proofs and
-          supporting documents: PDF, PNG or JPEG, up to 5 MB), and the reason
-          you give when asking to delete a review.
+          <strong>Deletion requests:</strong> the reason you give when asking to
+          delete a review.
         </li>
       </ul>
+      <p>
+        We don’t ask for the names of owners or anyone else, and we don’t accept
+        documents, ID numbers, phone numbers or payments.
+      </p>
       <h3>Collected automatically</h3>
       <ul>
         <li>
@@ -74,12 +76,11 @@ export default function PrivacyPolicy() {
       <h2>What is public</h2>
       <p>
         Reviews and interactions are published for everyone to read, with the
-        building, address, flat, rating, dates, text and the owner’s name the
-        author entered. They are <strong>not</strong> shown with your name,
-        email or account. Your email, files, deletion requests and account
-        details are never public. Please write only about your own experience,
-        stick to facts, and don’t include anyone’s phone number, email or other
-        private details.
+        building, address, flat, rating, dates and text. They are{" "}
+        <strong>not</strong> shown with your name, email or account. Your email,
+        deletion requests and account details are never public. Please write
+        only about your own experience, stick to facts, and don’t name people or
+        include anyone’s phone number, email or other private details.
       </p>
 
       <h2>Why we use it</h2>
@@ -87,8 +88,8 @@ export default function PrivacyPolicy() {
         <li>To let you sign in and manage your reviews.</li>
         <li>To publish reviews and show places on the map.</li>
         <li>
-          To keep reviews trustworthy: one interaction per person per flat, no
-          overlapping tenancies, and checking tenancy proofs you choose to add.
+          To keep reviews trustworthy: one interaction per person per flat and
+          no overlapping tenancies.
         </li>
         <li>To prevent abuse, keep the service secure and fix problems.</li>
         <li>To respond to your requests and to legal obligations.</li>
@@ -121,12 +122,12 @@ export default function PrivacyPolicy() {
         </li>
       </ul>
 
-      <h2>People named in reviews</h2>
+      <h2>Property owners</h2>
       <p>
-        Reviews include the name of the property owner as entered by the author.
-        If you are named in a review and believe it is inaccurate, unlawful or
-        should be removed, contact <Contact /> with a link to the review. We
-        will review it and respond as described below.
+        Reviews describe a tenancy in a building and flat; they do not name the
+        owner. If you own a property and believe a review of it is inaccurate,
+        unlawful or identifies a person, contact <Contact /> with a link to the
+        review. We will review it and respond as described below.
       </p>
 
       <h2>How long we keep it</h2>
@@ -136,10 +137,6 @@ export default function PrivacyPolicy() {
           Reviews and interactions stay published until they are deleted,
           including after you deactivate your account, unless you ask us to
           remove them.
-        </li>
-        <li>
-          Files you remove become unavailable immediately and are then deleted
-          from storage.
         </li>
         <li>
           Sessions expire after 7 days; abuse counters reset every hour; server
@@ -160,7 +157,7 @@ export default function PrivacyPolicy() {
         India.
       </p>
       <p>
-        How to delete your reviews, files or account is explained on{" "}
+        How to delete your reviews or account is explained on{" "}
         <a href={PATHS.deleteData}>Delete your data</a>.
       </p>
 
@@ -173,8 +170,7 @@ export default function PrivacyPolicy() {
 
       <h2>Security</h2>
       <p>
-        Data travels over HTTPS. Sessions are stored as scrambled tokens,
-        uploaded files are private and checked before they are accepted, and
+        Data travels over HTTPS. Sessions are stored as scrambled tokens, and
         access to the database is restricted. No system is perfectly secure; if
         a breach affects your data, we will notify you and the authorities as
         the law requires.

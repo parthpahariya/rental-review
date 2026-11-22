@@ -24,7 +24,7 @@ describe("legal pages", () => {
       "What we collect",
       "What is public",
       "Who we share it with",
-      "People named in reviews",
+      "Property owners",
       "Your rights",
       "Grievances",
     ])
@@ -44,7 +44,6 @@ describe("legal pages", () => {
     render(<DeleteData />);
     for (const label of [
       "Request deletion",
-      "Remove",
       "Deactivate account",
       "Confirm deactivation",
     ])

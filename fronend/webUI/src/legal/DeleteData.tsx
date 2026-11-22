@@ -3,7 +3,7 @@ import { PATHS } from "./site";
 
 /**
  * How to delete data, matching what the app can do today: review deletion is
- * an admin-approved request, attachments can be removed, deactivation ends
+ * an admin-approved request, deactivation ends
  * sign-in but keeps reviews public, and anything else goes through email.
  */
 export default function DeleteData() {
@@ -30,18 +30,6 @@ export default function DeleteData() {
         </li>
       </ol>
 
-      <h2>Remove a supporting file</h2>
-      <ol>
-        <li>
-          Open the interaction in Your rental notebook and choose{" "}
-          <strong>Remove</strong> next to the file.
-        </li>
-        <li>
-          The file is unavailable straight away and is then deleted from our
-          storage.
-        </li>
-      </ol>
-
       <h2>Delete an interaction</h2>
       <p>
         Interactions can’t be deleted in the app yet. Email <Contact /> from the
@@ -61,11 +49,11 @@ export default function DeleteData() {
         </li>
         <li>
           <strong>Delete everything:</strong> to erase your account and your
-          Google account ID, email and name, and to remove your reviews,
-          interactions and files, email <Contact /> from the address you sign in
-          with, with the subject “Delete my data”. Say whether your reviews
-          should be removed too. We confirm it’s you, complete the deletion
-          within 30 days and email you when it’s done.
+          Google account ID, email and name, and to remove your reviews and
+          interactions, email <Contact /> from the address you sign in with,
+          with the subject “Delete my data”. Say whether your reviews should be
+          removed too. We confirm it’s you, complete the deletion within 30 days
+          and email you when it’s done.
         </li>
       </ul>
 
@@ -76,11 +64,11 @@ export default function DeleteData() {
         requires it, for example to deal with a legal claim or a court order.
       </p>
 
-      <h2>If you are named in a review</h2>
+      <h2>If you own a reviewed property</h2>
       <p>
-        If you are a property owner named in a review and want it corrected or
-        removed, email <Contact /> with a link to the review and your reason. We
-        aim to respond within 15 days.
+        Reviews don’t name owners. If you own a property and want a review of it
+        corrected or removed, email <Contact /> with a link to the review and
+        your reason. We aim to respond within 15 days.
       </p>
 
       <p>

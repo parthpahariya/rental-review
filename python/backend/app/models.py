@@ -31,12 +31,10 @@ class Timestamps:
 
 
 class User(Identity, Timestamps, Base):
-    """An account signs in with Google. The mobile columns are kept read-only for
-    accounts created before phone sign-in was removed; nothing sets them any more."""
+    """An account signs in with Google. Accounts made before phone sign-in was
+    removed have no Google id and can no longer sign in; their reviews stay."""
 
     __tablename__ = "users"
-    mobile_number: Mapped[str | None] = mapped_column(String(20), unique=True)
-    mobile_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Google's stable account id ("sub"); emails can change, this never does.
     google_subject: Mapped[str | None] = mapped_column(String(255), unique=True)
     email: Mapped[str | None] = mapped_column(String(320))
@@ -54,14 +52,6 @@ class User(Identity, Timestamps, Base):
         CheckConstraint("role IN ('user', 'admin')"),
         CheckConstraint("status IN ('active', 'inactive')"),
         CheckConstraint("(status = 'inactive') = (deactivated_at IS NOT NULL)"),
-        CheckConstraint(
-            "mobile_number IS NOT NULL OR google_subject IS NOT NULL",
-            name="ck_users_sign_in_method",
-        ),
-        CheckConstraint(
-            "(mobile_number IS NULL) = (mobile_verified_at IS NULL)",
-            name="ck_users_mobile_verified",
-        ),
     )
 
 
@@ -116,32 +106,24 @@ class Flat(Identity, Timestamps, Base):
     __table_args__ = (CheckConstraint("length(trim(label)) > 0"),)
 
 
-class ProofPolicy(Identity, Base):
-    __tablename__ = "tenancy_proof_policies"
-    proof_required: Mapped[bool] = mapped_column(Boolean, default=False)
-    effective_from: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), unique=True, default=now
-    )
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
-
-
 class TenantReview(Identity, Base):
+    """A tenant's review of a flat. It names no person: reviews describe the
+    tenancy, not the owner, so no third party's personal data is stored."""
+
     __tablename__ = "tenant_reviews"
     author_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), index=True)
     flat_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("flats.id"), index=True)
-    owner_name: Mapped[str] = mapped_column(String(200))
     tenancy_start_date: Mapped[date]
     tenancy_end_date: Mapped[date]
     rating: Mapped[int]
     feedback: Mapped[str] = mapped_column(Text)
-    proof_policy_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenancy_proof_policies.id"))
     submitted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     __table_args__ = (
         CheckConstraint("rating BETWEEN 1 AND 5"),
         CheckConstraint("tenancy_end_date > tenancy_start_date"),
-        CheckConstraint("length(trim(owner_name)) > 0 AND length(trim(feedback)) > 0"),
+        CheckConstraint("length(trim(feedback)) > 0", name="ck_tenant_reviews_feedback"),
         Index(
             "ix_review_period",
             "flat_id",
@@ -157,47 +139,16 @@ class Interaction(Identity, Base):
     __tablename__ = "interaction_reviews"
     author_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), index=True)
     flat_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("flats.id"), index=True)
-    owner_name: Mapped[str] = mapped_column(String(200))
     description: Mapped[str] = mapped_column(Text)
     interaction_date: Mapped[date]
     submitted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     __table_args__ = (
         UniqueConstraint("author_id", "flat_id", name="uq_interaction_author_flat"),
-        CheckConstraint("length(trim(owner_name)) > 0 AND length(trim(description)) > 0"),
+        CheckConstraint(
+            "length(trim(description)) > 0", name="ck_interaction_reviews_description"
+        ),
         Index("ix_interaction_order", "flat_id", "submitted_at", "id"),
     )
-
-
-class File(Identity, Timestamps, Base):
-    __tablename__ = "files"
-    uploader_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), index=True)
-    purpose: Mapped[str] = mapped_column(String(30))
-    original_filename: Mapped[str] = mapped_column(String(255))
-    media_type: Mapped[str] = mapped_column(String(100))
-    size_bytes: Mapped[int]
-    status: Mapped[str] = mapped_column(String(20), default="ready")
-    storage_key: Mapped[str] = mapped_column(String(64), unique=True)
-    __table_args__ = (
-        CheckConstraint("purpose IN ('tenancy_proof', 'interaction_support')"),
-        CheckConstraint("size_bytes >= 0"),
-    )
-
-
-class Proof(Identity, Base):
-    __tablename__ = "tenancy_proofs"
-    tenant_review_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenant_reviews.id"), index=True)
-    file_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("files.id"), unique=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
-
-
-class Attachment(Identity, Base):
-    __tablename__ = "interaction_attachments"
-    interaction_review_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("interaction_reviews.id"), index=True
-    )
-    file_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("files.id"), unique=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
-    removed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class DeletionRequest(Identity, Base):

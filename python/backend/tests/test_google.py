@@ -87,7 +87,6 @@ def test_reviews_never_expose_email(client, flat_id):
         f"/api/v1/flats/{flat_id}/tenant-reviews",
         headers={"Authorization": f"Bearer {session}"},
         json={
-            "owner_name": "Owner One",
             "rating": 4,
             "feedback": "Helpful and responsive.",
             "tenancy_start_date": "2024-01-01",
@@ -114,7 +113,6 @@ def test_name_is_stored_and_refreshed_but_never_public(client, flat_id):
         f"/api/v1/flats/{flat_id}/tenant-reviews",
         headers=auth,
         json={
-            "owner_name": "Owner One",
             "rating": 4,
             "feedback": "Helpful.",
             "tenancy_start_date": "2024-01-01",

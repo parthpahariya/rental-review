@@ -82,8 +82,6 @@ def google_sign_in(
             google_subject=subject,
             email=claims["email"],
             name=google_name(claims),
-            mobile_number=None,
-            mobile_verified_at=None,
         )
         db.add(user)
         db.flush()

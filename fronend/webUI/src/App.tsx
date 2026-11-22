@@ -1183,7 +1183,7 @@ export default function App() {
               <strong>Add your own perspective.</strong>
               <p>
                 Sign in with Google to share. Reviews are public, while your
-                email and supporting documents stay private.
+                name and email stay private.
               </p>
             </li>
           </ol>
