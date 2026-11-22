@@ -184,6 +184,11 @@ jobs:
       HERE_API_KEY: ${{ vars.HERE_API_KEY }}
       MAPBOX_ACCESS_TOKEN: ${{ vars.MAPBOX_ACCESS_TOKEN }}
       OLA_MAPS_API_KEY: ${{ vars.OLA_MAPS_API_KEY }}
+      ADS_PROVIDER: ${{ vars.ADS_PROVIDER }}
+      ADSENSE_CLIENT: ${{ vars.ADSENSE_CLIENT }}
+      ADSENSE_SLOT_HOME: ${{ vars.ADSENSE_SLOT_HOME }}
+      ADSENSE_SLOT_LIST: ${{ vars.ADSENSE_SLOT_LIST }}
+      ADSENSE_SLOT_PLACE: ${{ vars.ADSENSE_SLOT_PLACE }}
       SECRET_KEY: ${{ secrets.SECRET_KEY }}
       GCP_SSH_PRIVATE_KEY: ${{ secrets.GCP_SSH_PRIVATE_KEY }}
       GCP_SSH_KNOWN_HOSTS: ${{ secrets.GCP_SSH_KNOWN_HOSTS }}

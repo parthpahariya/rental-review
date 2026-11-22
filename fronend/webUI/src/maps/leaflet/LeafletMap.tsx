@@ -49,10 +49,22 @@ export function rasterTiles(
   };
 }
 
+export type LeafletMapOptions = {
+  /**
+   * Tone the background down so rating pins stand out. For bright raster
+   * tiles (OpenStreetMap); designed styles (Ola, Mapbox, HERE) keep their own
+   * colours, which muting would wash out.
+   */
+  muted?: boolean;
+};
+
 /** A map component for the provider whose map `baseLayer` draws. */
-export function leafletMap(baseLayer: BaseLayer): ComponentType<MapProps> {
+export function leafletMap(
+  baseLayer: BaseLayer,
+  { muted = false }: LeafletMapOptions = {},
+): ComponentType<MapProps> {
   return function ProviderMap(props: MapProps) {
-    return <LeafletMap {...props} baseLayer={baseLayer} />;
+    return <LeafletMap {...props} baseLayer={baseLayer} muted={muted} />;
   };
 }
 
@@ -70,7 +82,8 @@ function LeafletMap({
   searched = null,
   partial = false,
   baseLayer,
-}: MapProps & { baseLayer: BaseLayer }) {
+  muted,
+}: MapProps & { baseLayer: BaseLayer; muted: boolean }) {
   const element = useRef<HTMLDivElement>(null);
   // The provider refused the map background; pins and the list still work.
   const [backgroundFailed, setBackgroundFailed] = useState(false);
@@ -358,7 +371,7 @@ function LeafletMap({
     <>
       <div
         ref={element}
-        className="property-map"
+        className={`property-map ${muted ? "basemap-muted" : ""}`}
         role="region"
         aria-label={MAP_LABEL}
       />

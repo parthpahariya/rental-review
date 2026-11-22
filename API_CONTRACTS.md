@@ -100,6 +100,10 @@ Google is the only way to sign in; there is no password or phone sign-in. Accoun
 
 `200`: `{ "data": { "provider": "google"|"here"|"mapbox"|"ola"|"osm", "api_key": string|null, "map_id": string|null } }`. `provider` is `MAP_PROVIDER`, or when that is unset `google` if `GOOGLE_MAPS_API_KEY` is set and `osm` otherwise. `api_key` is only the chosen provider's browser key (`GOOGLE_MAPS_API_KEY`, `HERE_API_KEY`, `MAPBOX_ACCESS_TOKEN` or `OLA_MAPS_API_KEY`; public by design, so restrict it by domain), and null for `osm`. `map_id` is set only for `google`: `GOOGLE_MAPS_MAP_ID`, falling back to `DEMO_MAP_ID` outside production.
 
+### `GET /ads/config` — Public
+
+`200`: `{ "data": { "provider": "adsense"|null, "client": string|null, "slots": { "home"?: string, "list"?: string, "place"?: string } } }`. `provider` is `ADS_PROVIDER` (null when unset: no ads, no ad script). `client` is the AdSense publisher id and `slots` the ad unit id per placement; placements without an id are omitted and show nothing. `GET /ads.txt` (served at the site root) returns the AdSense `ads.txt` line, or `404` when ads are off.
+
 ### `POST /auth/google` — Public
 
 Request: `{ "credential": string, "reactivate": boolean = false }`, where `credential` is the ID token returned by Google Identity Services. The server verifies its RS256 signature against Google's published keys, `aud` ∈ configured client ids, `iss` ∈ {`accounts.google.com`, `https://accounts.google.com`}, expiry, and `email_verified: true`. Accounts are keyed on the token's `sub`; `email` is refreshed on every sign-in.

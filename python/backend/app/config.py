@@ -44,6 +44,14 @@ class Settings(BaseSettings):
     mapbox_access_token: str = ""
     # Ola Maps API key: vector tiles + Places Autocomplete.
     ola_maps_api_key: str = ""
+    # Ads (see app/ads.py). Empty: no ads and no ad script on the page.
+    ads_provider: Literal["", "adsense"] = ""
+    # AdSense publisher id ("ca-pub-…") and one ad unit id per placement; a
+    # placement without a unit id shows nothing.
+    adsense_client: str = ""
+    adsense_slot_home: str = ""
+    adsense_slot_list: str = ""
+    adsense_slot_place: str = ""
     cors_origins: str = "http://localhost:5173,http://localhost:8080"
 
     @model_validator(mode="after")
@@ -57,6 +65,8 @@ class Settings(BaseSettings):
             raise ValueError(
                 f"MAP_PROVIDER={self.map_provider} requires {key_setting.upper()}"
             )
+        if self.ads_provider == "adsense" and not self.adsense_client.startswith("ca-pub-"):
+            raise ValueError("ADS_PROVIDER=adsense requires ADSENSE_CLIENT (ca-pub-…)")
         if self.app_env == "production" and not self.google_audiences:
             raise ValueError("Production requires GOOGLE_CLIENT_IDS (the only sign-in method)")
         return self

@@ -1,5 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App from "./App";
 import { setToken } from "./api";
@@ -11,8 +18,21 @@ const googlePlaces = vi.hoisted(() => ({
   autocomplete: vi.fn(),
   tokens: 0,
 }));
+/** The server's ad settings; none unless a test turns ads on. */
+const ads = vi.hoisted(() => ({
+  current: { provider: null, client: null, slots: {} } as {
+    provider: "adsense" | null;
+    client: string | null;
+    slots: Record<string, string>;
+  },
+}));
+vi.mock("./ads/config", () => ({
+  adConfig: () => Promise.resolve(ads.current),
+}));
 /** Which map provider the server reports; tests switch it per case. */
-const mapProvider = vi.hoisted(() => ({ current: "google" as "google" | "osm" }));
+const mapProvider = vi.hoisted(() => ({
+  current: "google" as "google" | "osm",
+}));
 vi.mock("./maps/config", () => ({
   mapConfig: () =>
     Promise.resolve({
@@ -176,6 +196,7 @@ function result(data: unknown, list = true) {
 
 beforeEach(() => {
   mapProvider.current = "google";
+  ads.current = { provider: null, client: null, slots: {} };
   googlePlaces.autocomplete.mockReset();
   googlePlaces.autocomplete.mockResolvedValue({ suggestions: [] });
   // Every test starts at the home page with a clean address bar and no
@@ -411,6 +432,43 @@ describe("Rental Review", () => {
     ).toBeInTheDocument();
   });
 
+  it("goes to typed coordinates without asking the map provider", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    const box = screen.getByRole("combobox", { name: /Search for a locality/ });
+    // Two numbers outside India (or half-typed) are not sent anywhere.
+    await user.type(box, "74, 1");
+    expect(
+      await screen.findByText(/No places in India match “74, 1”/),
+    ).toBeInTheDocument();
+    await user.clear(box);
+    await user.type(box, "12.9716, 77.5946");
+    const option = await screen.findByRole("option", {
+      name: /12\.97160, 77\.59460.*Go to these coordinates/,
+    });
+    expect(googlePlaces.autocomplete).not.toHaveBeenCalled();
+    await user.click(option);
+    expect(
+      await screen.findByText("Searched place at 12.9716,77.5946"),
+    ).toBeInTheDocument();
+  });
+
+  it("shows a failed search inside the suggestion list", async () => {
+    googlePlaces.autocomplete.mockRejectedValue(new Error("quota"));
+    const user = userEvent.setup();
+    render(<App />);
+    await user.type(
+      screen.getByRole("combobox", { name: /Search for a locality/ }),
+      "Unknown place",
+    );
+    const listbox = await screen.findByRole("listbox");
+    expect(
+      await within(listbox).findByText(
+        "Place suggestions are unavailable right now.",
+      ),
+    ).toBeInTheDocument();
+  });
+
   it("asks Google nothing until the visitor types", async () => {
     const user = userEvent.setup();
     render(<App />);
@@ -487,9 +545,7 @@ describe("Rental Review", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn((input: string) =>
-        Promise.resolve(
-          result(input.includes("q=Tower") ? towers : []),
-        ),
+        Promise.resolve(result(input.includes("q=Tower") ? towers : [])),
       ),
     );
     const user = userEvent.setup();
@@ -1073,6 +1129,42 @@ describe("Rental Review", () => {
     expect(cards()).toHaveLength(20);
     await user.selectOptions(screen.getByLabelText("Sort by"), "reviews");
     expect(cards()[0]).toHaveAccessibleName(/Tower 3\b/);
+  });
+
+  it("shows a labelled ad after every 8 places when ads are on", async () => {
+    ads.current = {
+      provider: "adsense",
+      client: "ca-pub-1",
+      slots: { list: "222" },
+    };
+    const many = Array.from({ length: 20 }, (_, i) => ({
+      ...location,
+      id: `dense-${i}`,
+      building_name: `Tower ${i}`,
+    }));
+    mapView.current = {
+      center: { latitude: 12, longitude: 77 },
+      bounds: { west: 76.9, south: 11.9, east: 77.1, north: 12.1 },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => Promise.resolve(result(many))),
+    );
+    const user = userEvent.setup();
+    render(<App />);
+    await browse(user);
+    await screen.findByRole("button", { name: /Tower 0\b/ });
+    const list = await screen.findAllByRole("complementary", {
+      name: "Advertisement",
+    });
+    // After the 8th and the 16th place; ads aren't counted as places.
+    expect(list).toHaveLength(2);
+    expect(screen.getAllByRole("button", { name: /Tower \d+/ })).toHaveLength(
+      20,
+    );
+    const items = [...document.querySelectorAll(".property-list > li")];
+    expect(items.indexOf(list[0].closest("li")!)).toBe(8);
+    expect(items.indexOf(list[1].closest("li")!)).toBe(17);
   });
 
   it("shows How it works only on the home page and a profile icon when signed in", async () => {

@@ -11,7 +11,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from starlette.exceptions import HTTPException
 
-from . import auth, files, google, maps, properties, reviews
+from . import ads, auth, files, google, maps, properties, reviews
 from .common import ApiError
 from .config import get_settings
 from .database import engine
@@ -184,6 +184,7 @@ for router in [
     auth.router,
     google.router,
     maps.router,
+    ads.router,
     properties.router,
     reviews.router,
     files.router,

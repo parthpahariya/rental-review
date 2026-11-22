@@ -538,7 +538,25 @@ svg {
   min-height: 52px;
 }
 .locality-search.compact {
+  position: relative;
   max-width: none;
+}
+/* In the top bar there's no room below the box: float the message instead. */
+.locality-search.compact .locality-error {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: var(--r);
+  background: white;
+  box-shadow: var(--shadow);
+}
+.locality-options li.locality-status.error {
+  color: var(--poor);
+  font-weight: 500;
 }
 .compact .search-form {
   padding: 4px 4px 4px 16px;
@@ -1042,8 +1060,9 @@ select {
 .leaflet-marker-icon {
   cursor: pointer;
 }
-/* Warm, muted basemap so rating pins carry the colour. */
-.leaflet-tile-pane {
+/* Warm, muted OpenStreetMap tiles so rating pins carry the colour. Providers
+   with designed styles (Ola, Mapbox, HERE) are left as they are. */
+.basemap-muted .leaflet-tile-pane {
   filter: sepia(0.25) saturate(0.45) brightness(1.03) contrast(0.92);
 }
 .leaflet-control-zoom {
@@ -2084,4 +2103,37 @@ select {
     transform: translateX(-50%);
     white-space: nowrap;
   }
+}
+
+/* Ads: always labelled, visually separate from reviews and places. */
+.ad-slot {
+  display: block;
+  margin: 16px 0;
+  padding: 10px 12px 12px;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--r);
+  background: white;
+}
+/* AdSense marks a unit it has no ad for; drop the empty, labelled box. */
+.ad-slot:has(ins[data-ad-status="unfilled"]) {
+  display: none;
+}
+.ad-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.ad-home {
+  width: min(100% - 32px, 1100px);
+  margin: 24px auto;
+}
+.property-list .ad-item {
+  list-style: none;
+}
+.property-list .ad-item .ad-slot {
+  margin: 8px 0;
 }

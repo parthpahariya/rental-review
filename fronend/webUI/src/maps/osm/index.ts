@@ -9,6 +9,7 @@ const OsmMap = leafletMap(
       '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
     maxZoom: MAX_ZOOM,
   }),
+  { muted: true },
 );
 
 /** Leaflet on OpenStreetMap tiles with Photon search. Free, no key needed. */

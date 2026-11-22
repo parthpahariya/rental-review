@@ -17,6 +17,8 @@ GOOD = {
 MAP_SETTINGS = {
     "MAP_PROVIDER", "GOOGLE_MAPS_API_KEY", "GOOGLE_MAPS_MAP_ID",
     "HERE_API_KEY", "MAPBOX_ACCESS_TOKEN", "OLA_MAPS_API_KEY",
+    "ADS_PROVIDER", "ADSENSE_CLIENT", "ADSENSE_SLOT_HOME", "ADSENSE_SLOT_LIST",
+    "ADSENSE_SLOT_PLACE",
 }
 
 
@@ -65,6 +67,17 @@ class CreateEnvTest(unittest.TestCase):
         self.assertIn('HERE_API_KEY=""', content)
         result, _, _ = run(MAP_PROVIDER="bing")
         self.assertNotEqual(result.returncode, 0)
+
+    def test_ads_settings_are_optional_and_checked(self):
+        result, content, _ = run()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('ADS_PROVIDER=""', content)
+        result, content, _ = run(ADS_PROVIDER="adsense", ADSENSE_CLIENT="ca-pub-1")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('ADSENSE_CLIENT="ca-pub-1"', content)
+        for bad in ({"ADS_PROVIDER": "medianet"}, {"ADSENSE_CLIENT": "pub-1"}):
+            result, _, _ = run(**bad)
+            self.assertNotEqual(result.returncode, 0, bad)
 
     def test_rejects_missing_or_unsafe_values(self):
         for overrides in (

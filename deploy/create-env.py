@@ -15,6 +15,11 @@ OPTIONAL = (
     "HERE_API_KEY",
     "MAPBOX_ACCESS_TOKEN",
     "OLA_MAPS_API_KEY",
+    "ADS_PROVIDER",
+    "ADSENSE_CLIENT",
+    "ADSENSE_SLOT_HOME",
+    "ADSENSE_SLOT_LIST",
+    "ADSENSE_SLOT_PLACE",
 )
 MAP_PROVIDERS = ("google", "here", "mapbox", "ola", "osm")
 NAMES = REQUIRED + OPTIONAL
@@ -33,6 +38,10 @@ def check(name, value):
         part.strip().endswith(".apps.googleusercontent.com") for part in value.split(",")
     ):
         raise SystemExit("GOOGLE_CLIENT_IDS must be Google OAuth client ids, comma-separated.")
+    if name == "ADS_PROVIDER" and value != "adsense":
+        raise SystemExit('ADS_PROVIDER must be "adsense" or unset.')
+    if name == "ADSENSE_CLIENT" and not value.startswith("ca-pub-"):
+        raise SystemExit("ADSENSE_CLIENT must be an AdSense publisher id (ca-pub-…).")
     if name == "MAP_PROVIDER" and value not in MAP_PROVIDERS:
         raise SystemExit("MAP_PROVIDER must be one of " + ", ".join(MAP_PROVIDERS) + " or unset.")
 

@@ -1,6 +1,11 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Icon } from "./components";
 import { api, type List, type Location } from "./api";
+import {
+  coordinatesArea,
+  looksLikeCoordinates,
+  parseCoordinates,
+} from "./maps/coordinates";
 import { loadMapProvider } from "./maps/provider";
 import { REGION } from "./maps/region";
 import type { Area, PlaceSearch, Point, Suggestion } from "./maps/types";
@@ -32,7 +37,9 @@ export async function searchListed(text: string): Promise<Suggestion[]> {
     };
     return {
       name,
-      detail: l.building_name ? `On Rental Review · ${l.address}` : "On Rental Review",
+      detail: l.building_name
+        ? `On Rental Review · ${l.address}`
+        : "On Rental Review",
       kind: "listed",
       resolve: () => Promise.resolve(area),
     };
@@ -72,13 +79,33 @@ export default function LocalitySearch({
     setAreas([]);
     setError("");
     if (term.length < MIN_SEARCH) return;
+    // Typed coordinates go straight to that spot; two numbers are never sent
+    // to a provider (Mapbox rejects them, others return noise).
+    if (looksLikeCoordinates(term)) {
+      const point = parseCoordinates(term);
+      const area = point && coordinatesArea(point);
+      setAreas(
+        area
+          ? [
+              {
+                name: area.name,
+                detail: "Go to these coordinates",
+                kind: "building",
+                resolve: () => Promise.resolve(area),
+              },
+            ]
+          : [],
+      );
+      return;
+    }
     // Results for text the visitor has since changed are dropped.
     let live = true;
+    // Show "Finding places…" during the typing pause too, not "No places".
+    setBusy(true);
     // Wait for a pause in typing, then look in Rental Review first (free) and
     // ask the map provider (Google is billed) only when too few listed
     // buildings match.
     const timer = setTimeout(async () => {
-      setBusy(true);
       const listed = await searchListed(term).catch(() => []);
       if (!live) return;
       setAreas(listed);
@@ -258,6 +285,11 @@ export default function LocalitySearch({
                 Finding places…
               </li>
             )}
+            {!busy && error && !options.length && (
+              <li className="locality-status error" role="alert">
+                {error}
+              </li>
+            )}
             {!busy && !error && !options.length && (
               <li className="locality-status" role="status">
                 No places in {REGION.name} match “{term}”.
@@ -287,7 +319,9 @@ export default function LocalitySearch({
           </button>
         </div>
       )}
-      {error && (
+      {/* Errors from searching show inside the open list; this one is for
+          the rest (opening a pick, location access), also when compact. */}
+      {error && !showList && (
         <p className="locality-error" role="alert">
           {error}
         </p>
