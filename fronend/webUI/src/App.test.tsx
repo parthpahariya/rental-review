@@ -1059,6 +1059,17 @@ describe("Rental Review", () => {
     expect(cards()[0]).toHaveAccessibleName(/Tower 3\b/);
   });
 
+  it("links the Privacy Policy and data deletion pages from the home page", () => {
+    render(<App />);
+    const footer = screen.getByRole("navigation", { name: "About this site" });
+    expect(
+      within(footer).getByRole("link", { name: "Privacy Policy" }),
+    ).toHaveAttribute("href", "/privacy");
+    expect(
+      within(footer).getByRole("link", { name: "Delete your data" }),
+    ).toHaveAttribute("href", "/delete-data");
+  });
+
   it("shows How it works only on the home page and a profile icon when signed in", async () => {
     const base = fetch as unknown as (
       input: string,

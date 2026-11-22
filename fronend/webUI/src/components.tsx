@@ -23,6 +23,7 @@ import type {
 } from "./api";
 import type { Point } from "./Map";
 import GoogleButton from "./GoogleButton";
+import { PATHS } from "./legal/site";
 
 export function Icon({ name, size = 20 }: { name: string; size?: number }) {
   const paths: Record<string, ReactNode> = {
@@ -350,7 +351,11 @@ export function SignIn({
       )}
       <p className="fine-print">
         <Icon name="shield" size={15} /> Your email is never shown with a
-        review.
+        review. By continuing you agree to our{" "}
+        <a href={PATHS.privacy} target="_blank" rel="noreferrer">
+          Privacy Policy
+        </a>
+        .
       </p>
     </Modal>
   );
