@@ -11,7 +11,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from starlette.exceptions import HTTPException
 
-from . import auth, files, google, properties, reviews
+from . import auth, files, google, maps, properties, reviews
 from .common import ApiError
 from .config import get_settings
 from .database import engine
@@ -180,5 +180,12 @@ def ready():
     return {"status": "ok", "database": "ok"}
 
 
-for router in [auth.router, google.router, properties.router, reviews.router, files.router]:
+for router in [
+    auth.router,
+    google.router,
+    maps.router,
+    properties.router,
+    reviews.router,
+    files.router,
+]:
     app.include_router(router, prefix="/api/v1")

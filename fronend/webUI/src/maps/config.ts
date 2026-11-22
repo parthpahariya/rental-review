@@ -1,12 +1,7 @@
 import { api } from "../api";
-import type { MapProviderName } from "./types";
+import type { MapConfig } from "./types";
 
-export type MapConfig = {
-  provider: MapProviderName;
-  /** Google only: the browser key (public by design) and map ID. */
-  api_key: string | null;
-  map_id: string | null;
-};
+export type { MapConfig } from "./types";
 
 let loading: Promise<MapConfig> | null = null;
 

@@ -48,7 +48,8 @@ from meal-manager's and only install or change rental-review's own files.
    | Variable | `GCP_VM_HOST` | Same as meal-manager |
    | Variable | `GCP_VM_USER` | Same as meal-manager |
    | Variable | `GOOGLE_CLIENT_IDS` | The OAuth web client id (`….apps.googleusercontent.com`) |
-   | Variable | `MAP_PROVIDER` | `google` or `osm` (optional; empty picks Google when a key is set) |
+   | Variable | `MAP_PROVIDER` | `google`, `here`, `mapbox`, `ola` or `osm` (optional; empty picks Google when its key is set) |
+   | Variable | `HERE_API_KEY` / `MAPBOX_ACCESS_TOKEN` / `OLA_MAPS_API_KEY` | Only the chosen provider's key is needed |
    | Variable | `GOOGLE_MAPS_API_KEY` | The referrer-restricted Maps browser key (optional; without it the map is unavailable) |
    | Variable | `GOOGLE_MAPS_MAP_ID` | The vector Map ID (optional) |
    | Secret | `GCP_SSH_PRIVATE_KEY` | Same private key as meal-manager's deploy key |

@@ -14,9 +14,15 @@ GOOD = {
 }
 
 
+MAP_SETTINGS = {
+    "MAP_PROVIDER", "GOOGLE_MAPS_API_KEY", "GOOGLE_MAPS_MAP_ID",
+    "HERE_API_KEY", "MAPBOX_ACCESS_TOKEN", "OLA_MAPS_API_KEY",
+}
+
+
 def run(**overrides):
     env = {k: v for k, v in os.environ.items()
-           if k not in GOOD and not k.startswith("GOOGLE_MAPS_") and k != "MAP_PROVIDER"}
+           if k not in GOOD and k not in MAP_SETTINGS}
     env.update({k: v for k, v in {**GOOD, **overrides}.items() if v is not None})
     with tempfile.TemporaryDirectory() as tmp:
         out = Path(tmp) / ".env"
@@ -50,9 +56,14 @@ class CreateEnvTest(unittest.TestCase):
         result, content, _ = run(GOOGLE_MAPS_API_KEY="AIza-key", GOOGLE_MAPS_MAP_ID="map1")
         self.assertIn('GOOGLE_MAPS_API_KEY="AIza-key"', content)
         self.assertIn('GOOGLE_MAPS_MAP_ID="map1"', content)
-        result, content, _ = run(MAP_PROVIDER="osm")
-        self.assertIn('MAP_PROVIDER="osm"', content)
-        result, _, _ = run(MAP_PROVIDER="mapbox")
+        for provider in ("google", "here", "mapbox", "ola", "osm"):
+            result, content, _ = run(MAP_PROVIDER=provider)
+            self.assertIn(f'MAP_PROVIDER="{provider}"', content)
+        result, content, _ = run(MAPBOX_ACCESS_TOKEN="pk.abc", OLA_MAPS_API_KEY="ola")
+        self.assertIn('MAPBOX_ACCESS_TOKEN="pk.abc"', content)
+        self.assertIn('OLA_MAPS_API_KEY="ola"', content)
+        self.assertIn('HERE_API_KEY=""', content)
+        result, _, _ = run(MAP_PROVIDER="bing")
         self.assertNotEqual(result.returncode, 0)
 
     def test_rejects_missing_or_unsafe_values(self):

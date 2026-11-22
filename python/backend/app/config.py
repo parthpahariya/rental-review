@@ -5,6 +5,14 @@ from typing import Literal
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# The setting holding each map provider's key; OpenStreetMap needs none.
+MAP_KEY_SETTINGS = {
+    "google": "google_maps_api_key",
+    "here": "here_api_key",
+    "mapbox": "mapbox_access_token",
+    "ola": "ola_maps_api_key",
+}
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
@@ -20,15 +28,22 @@ class Settings(BaseSettings):
     # OAuth web client id(s) from Google Cloud Console, comma-separated. Google is
     # the only way to sign in, so with this empty nobody can sign in.
     google_client_ids: str = ""
-    # Which map and place search the web app uses: "google" or "osm" (OpenStreetMap
-    # tiles with Photon search, free and keyless). Empty picks Google when a Maps key
-    # is set and OpenStreetMap otherwise.
-    map_provider: Literal["", "google", "osm"] = ""
-    # Browser key for the Maps JavaScript API and Places API (New), restricted by HTTP
-    # referrer in Google Cloud Console. Empty means the map shows as unavailable.
+    # Which map and place search the web app uses (see app/maps.py): "google",
+    # "here", "mapbox", "ola", or "osm" (OpenStreetMap tiles with Photon search, free
+    # and keyless). Empty picks Google when a Google Maps key is set, else OSM.
+    map_provider: Literal["", "google", "here", "mapbox", "ola", "osm"] = ""
+    # Each provider's browser key. They are public by design (the browser needs them),
+    # so restrict each one to the site's domains in that provider's console.
+    # Google: Maps JavaScript API + Places API (New).
     google_maps_api_key: str = ""
-    # Map ID (needed for Advanced Markers). Development falls back to Google's demo ID.
+    # Google Map ID (needed for Advanced Markers). Development uses Google's demo ID.
     google_maps_map_id: str = ""
+    # HERE platform API key: Raster Tile API v3 + Autosuggest.
+    here_api_key: str = ""
+    # Mapbox public access token (pk.…): Static Tiles API + Search Box API.
+    mapbox_access_token: str = ""
+    # Ola Maps API key: vector tiles + Places Autocomplete.
+    ola_maps_api_key: str = ""
     cors_origins: str = "http://localhost:5173,http://localhost:8080"
 
     @model_validator(mode="after")
@@ -37,8 +52,11 @@ class Settings(BaseSettings):
             len(self.secret_key) < 32 or self.secret_key.startswith("local-development")
         ):
             raise ValueError("Production requires a private SECRET_KEY")
-        if self.map_provider == "google" and not self.google_maps_api_key:
-            raise ValueError("MAP_PROVIDER=google requires GOOGLE_MAPS_API_KEY")
+        key_setting = MAP_KEY_SETTINGS.get(self.map_provider)
+        if key_setting and not getattr(self, key_setting):
+            raise ValueError(
+                f"MAP_PROVIDER={self.map_provider} requires {key_setting.upper()}"
+            )
         if self.app_env == "production" and not self.google_audiences:
             raise ValueError("Production requires GOOGLE_CLIENT_IDS (the only sign-in method)")
         return self

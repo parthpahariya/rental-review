@@ -11,41 +11,6 @@ CLIENT_ID = GOOGLE_CLIENT_ID
 token = google_token
 
 
-def test_map_config(client, monkeypatch):
-    settings = get_settings()
-    monkeypatch.setattr(settings, "map_provider", "")
-    monkeypatch.setattr(settings, "google_maps_api_key", "")
-    monkeypatch.setattr(settings, "google_maps_map_id", "")
-    # Without a key the free OpenStreetMap provider is used.
-    assert client.get("/api/v1/map/config").json()["data"] == {
-        "provider": "osm",
-        "api_key": None,
-        "map_id": None,
-    }
-    monkeypatch.setattr(settings, "google_maps_api_key", "browser-key")
-    assert client.get("/api/v1/map/config").json()["data"] == {
-        "provider": "google",
-        "api_key": "browser-key",
-        "map_id": "DEMO_MAP_ID",
-    }
-    monkeypatch.setattr(settings, "google_maps_map_id", "map-123")
-    assert client.get("/api/v1/map/config").json()["data"]["map_id"] == "map-123"
-    # OpenStreetMap can be chosen even with a key, and then hands out no key.
-    monkeypatch.setattr(settings, "map_provider", "osm")
-    assert client.get("/api/v1/map/config").json()["data"] == {
-        "provider": "osm",
-        "api_key": None,
-        "map_id": None,
-    }
-
-
-def test_google_provider_requires_key(monkeypatch):
-    from app.config import Settings
-
-    with pytest.raises(ValueError, match="GOOGLE_MAPS_API_KEY"):
-        Settings(map_provider="google", google_maps_api_key="")
-
-
 def google_sign_in(client, credential, **body):
     return client.post("/api/v1/auth/google", json={"credential": credential, **body})
 

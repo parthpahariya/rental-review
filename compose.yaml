@@ -36,6 +36,9 @@ services:
       MAP_PROVIDER: ${MAP_PROVIDER:-}
       GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:-}
       GOOGLE_MAPS_MAP_ID: ${GOOGLE_MAPS_MAP_ID:-}
+      HERE_API_KEY: ${HERE_API_KEY:-}
+      MAPBOX_ACCESS_TOKEN: ${MAPBOX_ACCESS_TOKEN:-}
+      OLA_MAPS_API_KEY: ${OLA_MAPS_API_KEY:-}
       CORS_ORIGINS: http://localhost:${WEB_PORT:-8080},http://localhost:5173
       SEED_DEMO_DATA: ${SEED_DEMO_DATA:-true}
       UPLOAD_DIR: /app/uploads

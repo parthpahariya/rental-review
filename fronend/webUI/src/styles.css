@@ -1063,6 +1063,31 @@ select {
   font-size: 11px;
 }
 
+/* Over a map whose background the provider refused; pins still work. */
+.map-notice {
+  position: absolute;
+  z-index: 500;
+  top: 16px;
+  left: calc(var(--panel-w) + var(--panel-gap) * 2);
+  right: 16px;
+  margin: 0 auto;
+  width: max-content;
+  max-width: calc(100% - var(--panel-w) - var(--panel-gap) * 4);
+  padding: 10px 16px;
+  border-radius: 999px;
+  background: white;
+  box-shadow: var(--shadow);
+  color: var(--muted);
+  font-size: 14px;
+  pointer-events: none;
+}
+@media (max-width: 860px) {
+  .map-notice {
+    left: 16px;
+    max-width: calc(100% - 32px);
+    white-space: normal;
+  }
+}
 /* Shown in place of the map when Google Maps can't load. */
 .map-unavailable {
   position: absolute;

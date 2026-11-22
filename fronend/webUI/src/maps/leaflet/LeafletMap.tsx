@@ -1,5 +1,9 @@
-/** The map drawn with Leaflet on OpenStreetMap tiles: free, no key. */
-import { useEffect, useRef } from "react";
+/**
+ * The Leaflet map engine: pins, rating bubbles, draft and searched-place pins,
+ * view reporting. It draws no map itself; each provider (OpenStreetMap, HERE,
+ * Mapbox, Ola) hands it the base layer with that provider's map.
+ */
+import { useEffect, useRef, useState, type ComponentType } from "react";
 import L from "leaflet";
 import "leaflet.markercluster";
 import "leaflet/dist/leaflet.css";
@@ -18,7 +22,41 @@ import {
 } from "../shared";
 import type { MapProps } from "../types";
 
-export default function LeafletMap({
+/**
+ * Makes the provider's map layer (raster tiles or a vector style). It calls
+ * `onFail` when the provider refuses it, e.g. a rejected or inactive key.
+ */
+export type BaseLayer = (onFail: () => void) => L.Layer;
+
+/**
+ * Raster tiles that report failure when none load: a few failed tiles are
+ * normal on a slow network, but every tile failing means the provider said no.
+ */
+export function rasterTiles(
+  url: string,
+  options: L.TileLayerOptions,
+): BaseLayer {
+  return (onFail) => {
+    let loaded = false;
+    let failed = 0;
+    return L.tileLayer(url, options)
+      .on("tileload", () => {
+        loaded = true;
+      })
+      .on("tileerror", () => {
+        if (!loaded && ++failed === 4) onFail();
+      });
+  };
+}
+
+/** A map component for the provider whose map `baseLayer` draws. */
+export function leafletMap(baseLayer: BaseLayer): ComponentType<MapProps> {
+  return function ProviderMap(props: MapProps) {
+    return <LeafletMap {...props} baseLayer={baseLayer} />;
+  };
+}
+
+function LeafletMap({
   locations,
   selected,
   onSelect,
@@ -31,8 +69,11 @@ export default function LeafletMap({
   focus = null,
   searched = null,
   partial = false,
-}: MapProps) {
+  baseLayer,
+}: MapProps & { baseLayer: BaseLayer }) {
   const element = useRef<HTMLDivElement>(null);
+  // The provider refused the map background; pins and the list still work.
+  const [backgroundFailed, setBackgroundFailed] = useState(false);
   const map = useRef<L.Map | null>(null);
   const markers = useRef<L.MarkerClusterGroup | null>(null);
   const byId = useRef(new Map<string, L.Marker>());
@@ -58,15 +99,14 @@ export default function LeafletMap({
   useEffect(() => {
     if (!element.current) return;
     const instance = L.map(element.current, {
+      // Set on the map itself, not only on tile layers: the cluster plugin
+      // requires it, and vector base layers (Ola) don't provide one.
+      maxZoom: MAX_ZOOM,
       zoomControl: false,
       scrollWheelZoom: true,
     }).setView([START.latitude, START.longitude], START.zoom);
     L.control.zoom({ position: "bottomright" }).addTo(instance);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution:
-        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-      maxZoom: MAX_ZOOM,
-    }).addTo(instance);
+    baseLayer(() => setBackgroundFailed(true)).addTo(instance);
     // Marker clicks don't bubble to the map, so this only fires on empty space.
     instance.on("click", (e: L.LeafletMouseEvent) =>
       pick.current?.({ latitude: e.latlng.lat, longitude: e.latlng.lng }),
@@ -315,12 +355,19 @@ export default function LeafletMap({
       }).addTo(instance);
   }, [searched?.latitude, searched?.longitude]);
   return (
-    <div
-      ref={element}
-      className="property-map"
-      role="region"
-      aria-label={MAP_LABEL}
-    />
+    <>
+      <div
+        ref={element}
+        className="property-map"
+        role="region"
+        aria-label={MAP_LABEL}
+      />
+      {backgroundFailed && (
+        <p className="map-notice" role="status">
+          The map background couldn’t load. Pins and the list still work.
+        </p>
+      )}
+    </>
   );
 }
 

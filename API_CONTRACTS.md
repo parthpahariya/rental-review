@@ -98,7 +98,7 @@ Google is the only way to sign in; there is no password or phone sign-in. Accoun
 
 ### `GET /map/config` — Public
 
-`200`: `{ "data": { "provider": "google"|"osm", "api_key": string|null, "map_id": string|null } }`. `provider` is `MAP_PROVIDER`, or when that is unset `google` if `GOOGLE_MAPS_API_KEY` is set and `osm` otherwise. For `google`, `api_key` is the Maps browser key (public by design; restrict it by HTTP referrer) and `map_id` is `GOOGLE_MAPS_MAP_ID`, falling back to `DEMO_MAP_ID` outside production. For `osm` both are null.
+`200`: `{ "data": { "provider": "google"|"here"|"mapbox"|"ola"|"osm", "api_key": string|null, "map_id": string|null } }`. `provider` is `MAP_PROVIDER`, or when that is unset `google` if `GOOGLE_MAPS_API_KEY` is set and `osm` otherwise. `api_key` is only the chosen provider's browser key (`GOOGLE_MAPS_API_KEY`, `HERE_API_KEY`, `MAPBOX_ACCESS_TOKEN` or `OLA_MAPS_API_KEY`; public by design, so restrict it by domain), and null for `osm`. `map_id` is set only for `google`: `GOOGLE_MAPS_MAP_ID`, falling back to `DEMO_MAP_ID` outside production.
 
 ### `POST /auth/google` — Public
 

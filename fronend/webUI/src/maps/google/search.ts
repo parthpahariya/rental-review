@@ -1,27 +1,8 @@
 /** Place search with Google Places API (New): Autocomplete, then Place Details. */
+import { isAreaType as isArea, isCityType as isCity } from "../places";
 import { REGION } from "../region";
 import type { Area, PlaceSearch, Point, Suggestion } from "../types";
 import { loadGoogleMaps } from "./loader";
-
-/** Google place types that describe an area rather than a single building. */
-function isArea(types: readonly string[]) {
-  return types.some(
-    (t) =>
-      t === "locality" ||
-      t === "neighborhood" ||
-      t === "colloquial_area" ||
-      t === "postal_code" ||
-      t === "country" ||
-      t.startsWith("sublocality") ||
-      t.startsWith("administrative_area"),
-  );
-}
-
-function isCity(types: readonly string[]) {
-  return types.some(
-    (t) => t === "locality" || t.startsWith("administrative_area"),
-  );
-}
 
 /** The map target for a place whose location and viewport have been fetched. */
 function toArea(
