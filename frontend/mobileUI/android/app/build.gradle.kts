@@ -21,7 +21,8 @@ android {
 
     defaultConfig {
         applicationId = "com.boringman.rentalreview"
-        minSdk = 26
+        // Android 6.0+, the oldest the AndroidX/Compose libraries support.
+        minSdk = 23
         targetSdk = 36
         versionCode = providers.environmentVariable("ANDROID_VERSION_CODE").orNull?.toInt() ?: 1
         versionName = providers.environmentVariable("ANDROID_VERSION_NAME").orNull ?: "1.0.0"
@@ -45,9 +46,12 @@ android {
             // The local stack's web container (it proxies /api to the backend).
             // 10.0.2.2 is the host machine as seen from the Android emulator.
             buildConfigField("String", "API_BASE_URL", "\"http://10.0.2.2:8088\"")
+            // Android 6.0 ignores network_security_config; this older flag covers it.
+            manifestPlaceholders["cleartext"] = true
         }
         release {
             buildConfigField("String", "API_BASE_URL", "\"$releaseBaseUrl\"")
+            manifestPlaceholders["cleartext"] = false
             isMinifyEnabled = false
             signingConfig = signingConfigs.findByName("release")
         }
@@ -59,6 +63,8 @@ android {
     }
 
     compileOptions {
+        // java.time (dates) on Android 6.0-7.1, which lack it.
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
@@ -71,6 +77,7 @@ kotlin {
 }
 
 dependencies {
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
     val composeBom = platform("androidx.compose:compose-bom:2026.09.00")
     implementation(composeBom)
     implementation("androidx.compose.ui:ui")

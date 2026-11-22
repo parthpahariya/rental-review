@@ -6,7 +6,7 @@ import SwiftUI
 /// as the web app, on any provider). In `addMode` a crosshair marks the spot a
 /// new place will be added at.
 struct MapPane: View {
-    @Environment(AppModel.self) private var model
+    @EnvironmentObject private var model: AppModel
     let provider: MapProvider
     let addMode: Bool
     @Binding var center: GeoPoint

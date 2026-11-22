@@ -54,7 +54,7 @@ struct BrandMark: View {
 
 /// Sign in, or the account's initial, which opens the notebook.
 struct AccountButton: View {
-    @Environment(AppModel.self) private var model
+    @EnvironmentObject private var model: AppModel
     var body: some View {
         if let account = model.account {
             Button(action: model.openNotebook) {
@@ -64,14 +64,16 @@ struct AccountButton: View {
             }
             .accessibilityLabel("Your account")
         } else {
-            Button(model.signingIn ? "Signing in…" : "Sign in", systemImage: "person", action: model.signIn)
-                .disabled(model.signingIn).bold().tint(Brand.ink)
+            Button(action: model.signIn) {
+                Label(model.signingIn ? "Signing in…" : "Sign in", systemImage: "person").font(.body.bold())
+            }
+            .disabled(model.signingIn).tint(Brand.ink)
         }
     }
 }
 
 struct TopBar: View {
-    @Environment(AppModel.self) private var model
+    @EnvironmentObject private var model: AppModel
     var back = false
     var body: some View {
         HStack {

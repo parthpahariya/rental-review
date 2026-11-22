@@ -45,7 +45,7 @@ final class Locator: NSObject, CLLocationManagerDelegate {
 }
 
 struct HomeView: View {
-    @Environment(AppModel.self) private var model
+    @EnvironmentObject private var model: AppModel
     @State private var locator = Locator()
 
     var body: some View {
@@ -98,14 +98,13 @@ struct HomeView: View {
 }
 
 struct ExploreView: View {
-    @Environment(AppModel.self) private var model
+    @EnvironmentObject private var model: AppModel
     @State private var listOpen = false
     @State private var addMode = false
     @State private var addingAt: GeoPoint?
     @State private var center = Region.defaultCenter
 
     var body: some View {
-        @Bindable var model = model
         VStack(spacing: 0) {
             TopBar(back: true)
             ZStack(alignment: .top) {
@@ -133,12 +132,12 @@ struct ExploreView: View {
                                 listOpen = true
                             } label: {
                                 Label("Show list · \(model.locations.count) \(model.locations.count == 1 ? "place" : "places")\(model.partial ? "+" : "")",
-                                      systemImage: "list.bullet").bold()
+                                      systemImage: "list.bullet").font(.body.bold())
                             }
                             .buttonStyle(.borderedProminent).tint(.white).foregroundStyle(Brand.ink)
                             Button {
                                 if model.account == nil { model.signIn() } else { addMode = true }
-                            } label: { Label("Add", systemImage: "plus").bold() }
+                            } label: { Label("Add", systemImage: "plus").font(.body.bold()) }
                                 .buttonStyle(.borderedProminent).tint(Brand.gold).foregroundStyle(Brand.ink)
                         }
                         .padding(.bottom, 24)
@@ -147,7 +146,7 @@ struct ExploreView: View {
             }
         }
         .sheet(isPresented: $listOpen) {
-            NavigationStack {
+            CompatNavigation {
                 List {
                     if model.nearestFirst.isEmpty && !model.loadingPlaces {
                         Text("No places in this area. Move the map, or add a place here.").foregroundStyle(Brand.muted)
@@ -159,10 +158,10 @@ struct ExploreView: View {
                 .navigationTitle(model.loadingPlaces ? "Loading places…" : "Nearest to map centre")
                 .navigationBarTitleDisplayMode(.inline)
             }
-            .presentationDetents([.medium, .large])
+            .sheetSizes([.medium, .large])
         }
         .sheet(isPresented: Binding(get: { model.selected != nil }, set: { if !$0 { model.closePlace() } })) {
-            PlaceDetails().presentationDetents([.large])
+            PlaceDetails().sheetSizes([.large])
         }
         .sheet(item: Binding(get: { addingAt.map { IdentifiedPoint(point: $0) } }, set: { addingAt = $0?.point })) { item in
             AddPlaceForm(at: item.point) { addMode = false }
@@ -176,7 +175,7 @@ private struct IdentifiedPoint: Identifiable {
 }
 
 struct NotebookView: View {
-    @Environment(AppModel.self) private var model
+    @EnvironmentObject private var model: AppModel
     @State private var name = ""
     @State private var deactivating = false
     @State private var requesting: Review?
