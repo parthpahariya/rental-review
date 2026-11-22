@@ -13,107 +13,56 @@ import { setToken } from "./api";
 import { scrollToListEnd } from "./test-setup";
 
 const mapView: { current: unknown } = { current: null };
-/** Stands in for Google Places; tests set what each call returns. */
-const googlePlaces = vi.hoisted(() => ({
-  autocomplete: vi.fn(),
-  tokens: 0,
-}));
-/** The server's ad settings; none unless a test turns ads on. */
-const ads = vi.hoisted(() => ({
-  current: { provider: null, client: null, slots: {} } as {
-    provider: "adsense" | null;
-    client: string | null;
-    slots: Record<string, string>;
-  },
-}));
-vi.mock("./ads/config", () => ({
-  adConfig: () => Promise.resolve(ads.current),
+/** Stands in for the Ola Maps search; tests set what each search returns. */
+const olaPlaces = vi.hoisted(() => ({ search: vi.fn(), finish: vi.fn() }));
+vi.mock("./maps/ola/search", () => ({
+  createOlaSearch: () => ({
+    search: (text: string, near?: unknown) => olaPlaces.search(text, near),
+    finish: () => olaPlaces.finish(),
+  }),
+  withOlaKey: (url: string) => url,
 }));
 /** Which map provider the server reports; tests switch it per case. */
 const mapProvider = vi.hoisted(() => ({
-  current: "google" as "google" | "osm",
+  current: "ola" as "ola" | "osm",
 }));
 vi.mock("./maps/config", () => ({
   mapConfig: () =>
     Promise.resolve({
       provider: mapProvider.current,
-      api_key: mapProvider.current === "google" ? "test-key" : null,
-      map_id: null,
-    }),
-}));
-vi.mock("./maps/google/loader", () => ({
-  loadGoogleMaps: () =>
-    Promise.resolve({
-      mapId: "test-map",
-      places: {
-        AutocompleteSessionToken: class {
-          id = ++googlePlaces.tokens;
-        },
-        AutocompleteSuggestion: {
-          fetchAutocompleteSuggestions: (request: unknown) =>
-            googlePlaces.autocomplete(request),
-        },
-      },
+      api_key: mapProvider.current === "ola" ? "test-key" : null,
     }),
 }));
 
-type FakePlace = {
-  name: string;
-  lat: number;
-  lng: number;
-  types: string[];
-  /** [west, south, east, north] */
-  viewport?: [number, number, number, number];
-};
-const latLng = (lat: number, lng: number) => ({
-  lat: () => lat,
-  lng: () => lng,
+/** A provider suggestion whose pick resolves to `area`. */
+function suggestion(
+  name: string,
+  detail: string,
+  kind: "area" | "building",
+  area: {
+    center: { latitude: number; longitude: number };
+    bounds?: { west: number; south: number; east: number; north: number };
+    zoom: number;
+  },
+) {
+  const exact = kind === "building";
+  return {
+    name,
+    detail,
+    kind,
+    resolve: vi.fn(() => Promise.resolve({ name, detail, exact, ...area })),
+  };
+}
+const indiranagar = suggestion("Indiranagar", "Bengaluru, Karnataka", "area", {
+  center: { latitude: 12.9784, longitude: 77.6408 },
+  bounds: { west: 77.62, south: 12.96, east: 77.66, north: 12.99 },
+  zoom: 15,
 });
-function fakePlace(p: FakePlace) {
-  const [west, south, east, north] = p.viewport ?? [];
-  return {
-    displayName: p.name,
-    types: p.types,
-    location: latLng(p.lat, p.lng),
-    viewport: p.viewport && {
-      getSouthWest: () => latLng(south!, west!),
-      getNorthEast: () => latLng(north!, east!),
-    },
-    fetchFields: vi.fn(() => Promise.resolve({})),
-  };
-}
-function suggestion(p: FakePlace, secondary: string) {
-  const place = fakePlace(p);
-  return {
-    placePrediction: {
-      mainText: { text: p.name },
-      secondaryText: { text: secondary },
-      text: { text: `${p.name}, ${secondary}` },
-      types: p.types,
-      placeId: `place-${p.name}`,
-      toPlace: () => place,
-    },
-    place,
-  };
-}
-const indiranagar = suggestion(
-  {
-    name: "Indiranagar",
-    lat: 12.9784,
-    lng: 77.6408,
-    types: ["sublocality_level_1", "sublocality", "political"],
-    viewport: [77.62, 12.96, 77.66, 12.99],
-  },
-  "Bengaluru, Karnataka, India",
-);
 const prestige = suggestion(
-  {
-    name: "Prestige Shantiniketan",
-    lat: 12.9886,
-    lng: 77.7287,
-    types: ["premise", "establishment"],
-  },
-  "Whitefield, Bengaluru, Karnataka, India",
+  "Prestige Shantiniketan",
+  "Whitefield, Bengaluru, Karnataka",
+  "building",
+  { center: { latitude: 12.9886, longitude: 77.7287 }, zoom: 18 },
 );
 vi.mock("./Map", async () => {
   const { useEffect } = await import("react");
@@ -195,10 +144,12 @@ function result(data: unknown, list = true) {
 }
 
 beforeEach(() => {
-  mapProvider.current = "google";
-  ads.current = { provider: null, client: null, slots: {} };
-  googlePlaces.autocomplete.mockReset();
-  googlePlaces.autocomplete.mockResolvedValue({ suggestions: [] });
+  mapProvider.current = "ola";
+  olaPlaces.search.mockReset();
+  olaPlaces.search.mockResolvedValue([]);
+  olaPlaces.finish.mockReset();
+  indiranagar.resolve.mockClear();
+  prestige.resolve.mockClear();
   // Every test starts at the home page with a clean address bar and no
   // remembered preferences (such as a hidden results list).
   window.history.replaceState(null, "", "/");
@@ -263,9 +214,7 @@ describe("Rental Review", () => {
   });
 
   it("asks for a locality before showing the map", async () => {
-    googlePlaces.autocomplete.mockResolvedValue({
-      suggestions: [indiranagar, prestige],
-    });
+    olaPlaces.search.mockResolvedValue([indiranagar, prestige]);
     const user = userEvent.setup();
     render(<App />);
     expect(
@@ -276,13 +225,11 @@ describe("Rental Review", () => {
       "Indira",
     );
     const option = await screen.findByRole("option", { name: /^Indiranagar/ });
-    expect(screen.getByText("Powered by Google")).toBeInTheDocument();
-    const request = googlePlaces.autocomplete.mock.calls.at(-1)![0];
-    expect(request).toMatchObject({
-      input: "Indira",
-      includedRegionCodes: ["in"],
-      // Biased towards Bengaluru (no location shared in the test).
-      locationBias: { center: { lat: 12.955, lng: 77.63 }, radius: 50000 },
+    expect(screen.getByText("Search by Ola Maps")).toBeInTheDocument();
+    // Biased towards Bengaluru (no location shared in the test).
+    expect(olaPlaces.search).toHaveBeenLastCalledWith("Indira", {
+      latitude: 12.955,
+      longitude: 77.63,
     });
     await user.click(option);
     expect(
@@ -292,29 +239,19 @@ describe("Rental Review", () => {
     expect(
       screen.getByRole("button", { name: "Area: Indiranagar. Change area" }),
     ).toHaveTextContent("Indiranagar");
-    expect(indiranagar.place.fetchFields).toHaveBeenCalled();
+    expect(indiranagar.resolve).toHaveBeenCalled();
     // An area is fitted on screen, not marked with a pin.
     expect(screen.queryByText(/Searched place/)).not.toBeInTheDocument();
   });
 
-  it("finds buildings and keeps one search session until a pick", async () => {
-    googlePlaces.autocomplete.mockResolvedValue({
-      suggestions: [prestige],
-    });
+  it("finds buildings, marks the pick, and ends the search session", async () => {
+    olaPlaces.search.mockResolvedValue([prestige]);
     const user = userEvent.setup();
     render(<App />);
-    const box = screen.getByRole("combobox", { name: /Search for a locality/ });
-    await user.type(box, "Pres");
-    await screen.findByRole("option", { name: /^Prestige Shantiniketan/ });
-    await user.type(box, "tige");
-    await waitFor(() =>
-      expect(googlePlaces.autocomplete).toHaveBeenCalledTimes(2),
+    await user.type(
+      screen.getByRole("combobox", { name: /Search for a locality/ }),
+      "Prestige",
     );
-    const [first, second] = googlePlaces.autocomplete.mock.calls.map(
-      ([r]) => r.sessionToken,
-    );
-    // Keystrokes in one search share a token, so Google bills one session.
-    expect(second).toBe(first);
     await user.click(
       await screen.findByRole("option", { name: /^Prestige Shantiniketan/ }),
     );
@@ -323,22 +260,13 @@ describe("Rental Review", () => {
         name: "Area: Prestige Shantiniketan. Change area",
       }),
     ).toBeInTheDocument();
-    expect(prestige.place.fetchFields).toHaveBeenCalled();
+    expect(prestige.resolve).toHaveBeenCalled();
     // The map marks the building the visitor picked.
     expect(
       screen.getByText("Searched place at 12.9886,77.7287"),
     ).toBeInTheDocument();
-    // A new search after the pick starts a new session.
-    await user.type(
-      screen.getByRole("combobox", { name: /Search for a locality/ }),
-      "Indira",
-    );
-    await waitFor(() =>
-      expect(googlePlaces.autocomplete).toHaveBeenCalledTimes(3),
-    );
-    expect(googlePlaces.autocomplete.mock.calls[2][0].sessionToken).not.toBe(
-      first,
-    );
+    // The pick ends the provider's search session.
+    expect(olaPlaces.finish).toHaveBeenCalled();
   });
 
   it("searches OpenStreetMap when the server picks it", async () => {
@@ -401,7 +329,7 @@ describe("Rental Review", () => {
     expect(
       screen.getByText("Search © OpenStreetMap contributors"),
     ).toBeInTheDocument();
-    expect(googlePlaces.autocomplete).not.toHaveBeenCalled();
+    expect(olaPlaces.search).not.toHaveBeenCalled();
     const geocode = vi
       .mocked(fetch)
       .mock.calls.map(([url]) => String(url))
@@ -446,7 +374,7 @@ describe("Rental Review", () => {
     const option = await screen.findByRole("option", {
       name: /12\.97160, 77\.59460.*Go to these coordinates/,
     });
-    expect(googlePlaces.autocomplete).not.toHaveBeenCalled();
+    expect(olaPlaces.search).not.toHaveBeenCalled();
     await user.click(option);
     expect(
       await screen.findByText("Searched place at 12.9716,77.5946"),
@@ -454,7 +382,7 @@ describe("Rental Review", () => {
   });
 
   it("shows a failed search inside the suggestion list", async () => {
-    googlePlaces.autocomplete.mockRejectedValue(new Error("quota"));
+    olaPlaces.search.mockRejectedValue(new Error("quota"));
     const user = userEvent.setup();
     render(<App />);
     await user.type(
@@ -469,7 +397,7 @@ describe("Rental Review", () => {
     ).toBeInTheDocument();
   });
 
-  it("asks Google nothing until the visitor types", async () => {
+  it("asks the map provider nothing until the visitor types", async () => {
     const user = userEvent.setup();
     render(<App />);
     await user.click(
@@ -479,7 +407,7 @@ describe("Rental Review", () => {
     // Three letters are not enough to search, and the empty box lists nothing.
     await new Promise((r) => setTimeout(r, 500));
     expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
-    expect(googlePlaces.autocomplete).not.toHaveBeenCalled();
+    expect(olaPlaces.search).not.toHaveBeenCalled();
   });
 
   it("lets the visitor hide the results list and bring it back", async () => {
@@ -508,8 +436,8 @@ describe("Rental Review", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("lists buildings already on Rental Review first, without Google", async () => {
-    googlePlaces.autocomplete.mockResolvedValue({ suggestions: [prestige] });
+  it("lists buildings already on Rental Review first, for free", async () => {
+    olaPlaces.search.mockResolvedValue([prestige]);
     const user = userEvent.setup();
     render(<App />);
     await user.type(
@@ -519,7 +447,7 @@ describe("Rental Review", () => {
     const listed = await screen.findByRole("option", {
       name: /^Parkside Residences.*On Rental Review/,
     });
-    // Too few listed matches, so Google fills in below them.
+    // Too few listed matches, so the map provider fills in below them.
     expect(
       await screen.findByRole("option", { name: /^Prestige Shantiniketan/ }),
     ).toBeInTheDocument();
@@ -532,11 +460,11 @@ describe("Rental Review", () => {
         name: "Area: Parkside Residences. Change area",
       }),
     ).toBeInTheDocument();
-    // Picking a listed building needs no paid Google lookup.
-    expect(prestige.place.fetchFields).not.toHaveBeenCalled();
+    // Picking a listed building needs no paid provider lookup.
+    expect(prestige.resolve).not.toHaveBeenCalled();
   });
 
-  it("skips Google when enough listed buildings match", async () => {
+  it("skips the map provider when enough listed buildings match", async () => {
     const towers = ["North", "South", "East"].map((side, i) => ({
       ...location,
       id: `tower-${i}`,
@@ -557,8 +485,8 @@ describe("Rental Review", () => {
     expect(
       await screen.findAllByRole("option", { name: /Tower.*On Rental Review/ }),
     ).toHaveLength(3);
-    expect(googlePlaces.autocomplete).not.toHaveBeenCalled();
-    expect(screen.queryByText("Powered by Google")).not.toBeInTheDocument();
+    expect(olaPlaces.search).not.toHaveBeenCalled();
+    expect(screen.queryByText("Search by Ola Maps")).not.toBeInTheDocument();
   });
 
   it("says when nothing matches and when suggestions fail", async () => {
@@ -569,7 +497,7 @@ describe("Rental Review", () => {
     expect(
       await screen.findByText(/No places in India match “Unknown”/),
     ).toBeInTheDocument();
-    googlePlaces.autocomplete.mockRejectedValue(new Error("quota"));
+    olaPlaces.search.mockRejectedValue(new Error("quota"));
     await user.type(box, "x");
     expect(
       await screen.findByText("Place suggestions are unavailable right now."),
@@ -1129,42 +1057,6 @@ describe("Rental Review", () => {
     expect(cards()).toHaveLength(20);
     await user.selectOptions(screen.getByLabelText("Sort by"), "reviews");
     expect(cards()[0]).toHaveAccessibleName(/Tower 3\b/);
-  });
-
-  it("shows a labelled ad after every 8 places when ads are on", async () => {
-    ads.current = {
-      provider: "adsense",
-      client: "ca-pub-1",
-      slots: { list: "222" },
-    };
-    const many = Array.from({ length: 20 }, (_, i) => ({
-      ...location,
-      id: `dense-${i}`,
-      building_name: `Tower ${i}`,
-    }));
-    mapView.current = {
-      center: { latitude: 12, longitude: 77 },
-      bounds: { west: 76.9, south: 11.9, east: 77.1, north: 12.1 },
-    };
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(() => Promise.resolve(result(many))),
-    );
-    const user = userEvent.setup();
-    render(<App />);
-    await browse(user);
-    await screen.findByRole("button", { name: /Tower 0\b/ });
-    const list = await screen.findAllByRole("complementary", {
-      name: "Advertisement",
-    });
-    // After the 8th and the 16th place; ads aren't counted as places.
-    expect(list).toHaveLength(2);
-    expect(screen.getAllByRole("button", { name: /Tower \d+/ })).toHaveLength(
-      20,
-    );
-    const items = [...document.querySelectorAll(".property-list > li")];
-    expect(items.indexOf(list[0].closest("li")!)).toBe(8);
-    expect(items.indexOf(list[1].closest("li")!)).toBe(17);
   });
 
   it("shows How it works only on the home page and a profile icon when signed in", async () => {

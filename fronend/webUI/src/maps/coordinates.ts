@@ -1,7 +1,7 @@
 /**
  * Typed coordinates in the search box, e.g. "12.9716, 77.5946" copied from a
  * phone's map app. They're the visitor's own input, so going there needs no
- * provider (and some providers, like Mapbox, reject them as a search).
+ * provider, and a place search would only return noise for them.
  */
 import { REGION } from "./region";
 import type { Area, Point } from "./types";

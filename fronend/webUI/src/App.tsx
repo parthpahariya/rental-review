@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   AccountPanel,
   AddFlatForm,
@@ -12,7 +12,6 @@ import {
   SignIn,
 } from "./components";
 import PropertyMap from "./Map";
-import AdSlot from "./ads/AdSlot";
 import LocalitySearch, { DEFAULT_CENTER } from "./LocalitySearch";
 import type { Area } from "./LocalitySearch";
 import type { Bounds, Focus, MapView, Point } from "./Map";
@@ -609,7 +608,6 @@ export default function App() {
               </article>
             </div>
           </section>
-          <AdSlot placement="home" />
           <section className="cta" aria-labelledby="cta-title">
             <div>
               <h2 id="cta-title">Rented before? Help the next tenant.</h2>
@@ -714,72 +712,60 @@ export default function App() {
                   )}
                   {!loading && listed.length > 0 && (
                     <ul className="property-list">
-                      {listed.map((location, index) => {
+                      {listed.map((location) => {
                         const rating = location.summary.average_rating;
                         const tenant = location.summary.tenant_review_count;
                         const other = location.summary.interaction_review_count;
                         return (
-                          <Fragment key={location.id}>
-                            <li>
-                              <button
-                                className={`property-card ${hovered === location.id ? "hovered" : ""}`}
-                                onClick={() => selectLocation(location)}
-                                onMouseEnter={() => setHovered(location.id)}
-                                onMouseLeave={() => setHovered(null)}
-                                onFocus={() => setHovered(location.id)}
-                                onBlur={() => setHovered(null)}
+                          <li key={location.id}>
+                            <button
+                              className={`property-card ${hovered === location.id ? "hovered" : ""}`}
+                              onClick={() => selectLocation(location)}
+                              onMouseEnter={() => setHovered(location.id)}
+                              onMouseLeave={() => setHovered(null)}
+                              onFocus={() => setHovered(location.id)}
+                              onBlur={() => setHovered(null)}
+                            >
+                              <span
+                                className={`score ${rating == null ? "none" : rating >= 4 ? "good" : rating >= 3 ? "fair" : "poor"}`}
+                                aria-hidden="true"
                               >
-                                <span
-                                  className={`score ${rating == null ? "none" : rating >= 4 ? "good" : rating >= 3 ? "fair" : "poor"}`}
-                                  aria-hidden="true"
-                                >
-                                  {rating == null ? (
-                                    <small>New</small>
-                                  ) : (
-                                    <>
-                                      {rating.toFixed(1)}
-                                      <Icon name="star" size={12} />
-                                    </>
+                                {rating == null ? (
+                                  <small>New</small>
+                                ) : (
+                                  <>
+                                    {rating.toFixed(1)}
+                                    <Icon name="star" size={12} />
+                                  </>
+                                )}
+                              </span>
+                              <span className="property-body">
+                                <strong>
+                                  {location.building_name || "Rental property"}
+                                </strong>{" "}
+                                <span className="property-address">
+                                  {location.address}
+                                </span>{" "}
+                                <span className="property-meta">
+                                  {rating == null && (
+                                    <span className="sr-only">
+                                      No tenant rating yet.{" "}
+                                    </span>
                                   )}
+                                  {rating != null && (
+                                    <span className="sr-only">
+                                      Rated {rating.toFixed(1)} of 5.{" "}
+                                    </span>
+                                  )}
+                                  {tenant} tenant{" "}
+                                  {tenant === 1 ? "review" : "reviews"} ·{" "}
+                                  {other}{" "}
+                                  {other === 1 ? "interaction" : "interactions"}
                                 </span>
-                                <span className="property-body">
-                                  <strong>
-                                    {location.building_name ||
-                                      "Rental property"}
-                                  </strong>{" "}
-                                  <span className="property-address">
-                                    {location.address}
-                                  </span>{" "}
-                                  <span className="property-meta">
-                                    {rating == null && (
-                                      <span className="sr-only">
-                                        No tenant rating yet.{" "}
-                                      </span>
-                                    )}
-                                    {rating != null && (
-                                      <span className="sr-only">
-                                        Rated {rating.toFixed(1)} of 5.{" "}
-                                      </span>
-                                    )}
-                                    {tenant} tenant{" "}
-                                    {tenant === 1 ? "review" : "reviews"} ·{" "}
-                                    {other}{" "}
-                                    {other === 1
-                                      ? "interaction"
-                                      : "interactions"}
-                                  </span>
-                                </span>
-                                <Icon name="chevron" size={18} />
-                              </button>
-                            </li>
-                            {/* One ad after every few places, never between a
-                              place and its own details. */}
-                            {(index + 1) % LIST_AD_EVERY === 0 && (
-                              <li className="ad-item">
-                                <AdSlot placement="list" />
-                              </li>
-                            )}
-                          </Fragment>
+                              </span>
+                              <Icon name="chevron" size={18} />
+                            </button>
+                          </li>
                         );
                       })}
                     </ul>
@@ -979,8 +965,6 @@ export default function App() {
                     )
                   )}
                 </div>
-                {/* Below the reviews, never among them. */}
-                <AdSlot placement="place" />
               </section>
             )}
           </div>
@@ -1205,8 +1189,6 @@ export default function App() {
 }
 
 const PAGE_SIZE = 20;
-/** The results list shows an ad after every this many places. */
-const LIST_AD_EVERY = 8;
 /** Up to 500 pins per view; denser views ask the visitor to zoom in. */
 const MAX_PAGES = 5;
 /** A first map query for an area, before the map has reported its view. */

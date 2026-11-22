@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { MapProviderName } from "./types";
 
 const config = vi.hoisted(() => ({
-  provider: "google" as MapProviderName,
+  provider: "ola" as MapProviderName,
   api_key: "test-key" as string | null,
 }));
 vi.mock("./config", () => ({
@@ -10,7 +10,6 @@ vi.mock("./config", () => ({
     Promise.resolve({
       provider: config.provider,
       api_key: config.api_key,
-      map_id: null,
     }),
 }));
 
@@ -18,9 +17,6 @@ import { loadMapProvider } from "./provider";
 
 describe("loadMapProvider", () => {
   it.each<[MapProviderName, RegExp]>([
-    ["google", /Google/],
-    ["here", /HERE/],
-    ["mapbox", /Mapbox/],
     ["ola", /Ola Maps/],
     ["osm", /OpenStreetMap/],
   ])(

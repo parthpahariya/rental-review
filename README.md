@@ -43,17 +43,10 @@ The map and search box come from one provider, chosen by `MAP_PROVIDER`:
 
 | `MAP_PROVIDER` | Map | Search | Key setting |
 | --- | --- | --- | --- |
-| `google` | Google Maps JavaScript API | Google Places (New) | `GOOGLE_MAPS_API_KEY` (+ optional `GOOGLE_MAPS_MAP_ID`) |
-| `here` | HERE Raster Tile API v3 (Leaflet) | HERE Autosuggest | `HERE_API_KEY` |
-| `mapbox` | Mapbox Static Tiles, `streets-v12` (Leaflet) | Mapbox Search Box | `MAPBOX_ACCESS_TOKEN` (public `pk.` token) |
 | `ola` | Ola Maps vector style (MapLibre in Leaflet) | Ola Places Autocomplete | `OLA_MAPS_API_KEY` |
 | `osm` | OpenStreetMap tiles (Leaflet) | Photon | none |
 
-Left empty, Google is used when `GOOGLE_MAPS_API_KEY` is set and OpenStreetMap otherwise; a provider set without its key stops the backend at startup. Keys reach the browser, so restrict each to the site's domains in that provider's console. Each provider lives in its own folder under `fronend/webUI/src/maps/` and implements one contract (`src/maps/types.ts`); the Leaflet engine (`src/maps/leaflet/`) is shared by every provider except Google, so pins, clusters and the searched-place marker behave the same everywhere. The browser downloads only the chosen provider. Search always lists buildings already on Rental Review first, for free.
-
-Ads are optional and off by default. `ADS_PROVIDER=adsense` with `ADSENSE_CLIENT` (your `ca-pub-…` publisher id) turns on Google AdSense; each placement shows an ad only when its ad unit id is set: `ADSENSE_SLOT_HOME` (home page, between sections), `ADSENSE_SLOT_LIST` (results list, after every 8 places) and `ADSENSE_SLOT_PLACE` (below a place's reviews). Ads are labelled "Sponsored", never appear on the map (Google Maps terms) or among reviews, and unfilled units are hidden. The backend serves `/ads.txt` for AdSense. With ads off the page loads no ad script. The network code lives in `fronend/webUI/src/ads/`, behind the same kind of contract as the map providers. Before showing ads to visitors in the EEA/UK, set up a consent message in AdSense (Privacy & messaging), and publish a privacy policy that mentions ads and cookies. Stored places are plain WGS84 coordinates and user text, so switching providers needs no migration.
-
-For Google, in the same Google Cloud project, enable the **Maps JavaScript API** and **Places API (New)**, create an API key restricted to those two APIs and to your origins as HTTP referrers (for example `http://localhost:8080/*` and `http://localhost:5173/*`), and set `GOOGLE_MAPS_API_KEY` in `.env`. `GOOGLE_MAPS_MAP_ID` is optional in development (Google's demo map ID is used); create a vector Map ID for production. Without a key the map says it is unavailable and the property list still works. Search only moves the map: a new place is saved at the pin the user taps or drags, never at coordinates copied from Google, so stored locations stay provider-neutral.
+Left empty, Ola is used when `OLA_MAPS_API_KEY` is set and OpenStreetMap otherwise; `MAP_PROVIDER=ola` without a key stops the backend at startup. Create the Ola key in the Krutrim Cloud console (Ola Maps → Maps Credentials) and add your domains (e.g. `localhost`) to its allowed list: the key reaches the browser. Each provider lives in its own folder under `fronend/webUI/src/maps/` and implements one contract (`src/maps/types.ts`); both use the shared Leaflet engine (`src/maps/leaflet/`), so pins, clusters and the searched-place marker behave the same. The browser downloads only the chosen provider. Search always lists buildings already on Rental Review first, for free, and accepts typed coordinates. Search only moves the map: a new place is saved at the pin the user taps or drags, so stored locations are plain WGS84 coordinates and user text, and switching providers needs no migration.
 
 ```sh
 docker compose logs -f --tail=100
@@ -80,7 +73,7 @@ files change. Press Ctrl+C to stop watching; the stack keeps running.
 
 ## Included behavior
 
-- Map with pan, zoom, keyboard markers and clustered rating pins, and place search across India, from Google Maps, HERE, Mapbox, Ola Maps or OpenStreetMap (set by `MAP_PROVIDER`), and an equivalent searchable property list. Select a building, then a flat; switch between Tenant Reviews and Interactions.
+- Map with pan, zoom, keyboard markers and clustered rating pins, and place search across India, from Ola Maps or OpenStreetMap (set by `MAP_PROVIDER`), and an equivalent searchable property list. Select a building, then a flat; switch between Tenant Reviews and Interactions.
 - Google sign-in (ID tokens verified server-side against Google's keys, audience, issuer, expiry, and verified email); PostgreSQL-backed per-IP rate limit; hashed opaque sessions; sign-out; confirmed deactivation and reactivation.
 - Owner names belong to individual reviews. Each tenant review includes rating, feedback, and immutable tenancy dates. A flat-row lock makes conflicting submissions by different tenants atomic. Adjacent tenancy periods and overlapping reviews by the same author are supported.
 - Authors can edit rating and feedback for 30 days. They can request deletion at any time; an admin must approve it. Approved deletion updates public views, rating aggregates, and tenancy availability atomically.
@@ -93,7 +86,7 @@ files change. Press Ctrl+C to stop watching; the stack keeps running.
 
 ```text
 python/backend/          FastAPI, SQLAlchemy models, Alembic migrations, pytest
-fronend/webUI/           React, TypeScript, Vite, Google Maps JS API or Leaflet (+ MapLibre for Ola), Vitest, Nginx
+fronend/webUI/           React, TypeScript, Vite, Leaflet (+ MapLibre for Ola), Vitest, Nginx
 compose.yaml            Application stack and resource limits
 compose.test.yaml       Isolated PostgreSQL 18.6 integration-test stack (never the shared database)
 compose.ci.yaml         GitLab Docker-in-Docker port override

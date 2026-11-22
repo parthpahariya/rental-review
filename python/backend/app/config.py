@@ -6,12 +6,7 @@ from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # The setting holding each map provider's key; OpenStreetMap needs none.
-MAP_KEY_SETTINGS = {
-    "google": "google_maps_api_key",
-    "here": "here_api_key",
-    "mapbox": "mapbox_access_token",
-    "ola": "ola_maps_api_key",
-}
+MAP_KEY_SETTINGS = {"ola": "ola_maps_api_key"}
 
 
 class Settings(BaseSettings):
@@ -28,30 +23,13 @@ class Settings(BaseSettings):
     # OAuth web client id(s) from Google Cloud Console, comma-separated. Google is
     # the only way to sign in, so with this empty nobody can sign in.
     google_client_ids: str = ""
-    # Which map and place search the web app uses (see app/maps.py): "google",
-    # "here", "mapbox", "ola", or "osm" (OpenStreetMap tiles with Photon search, free
-    # and keyless). Empty picks Google when a Google Maps key is set, else OSM.
-    map_provider: Literal["", "google", "here", "mapbox", "ola", "osm"] = ""
-    # Each provider's browser key. They are public by design (the browser needs them),
-    # so restrict each one to the site's domains in that provider's console.
-    # Google: Maps JavaScript API + Places API (New).
-    google_maps_api_key: str = ""
-    # Google Map ID (needed for Advanced Markers). Development uses Google's demo ID.
-    google_maps_map_id: str = ""
-    # HERE platform API key: Raster Tile API v3 + Autosuggest.
-    here_api_key: str = ""
-    # Mapbox public access token (pk.…): Static Tiles API + Search Box API.
-    mapbox_access_token: str = ""
-    # Ola Maps API key: vector tiles + Places Autocomplete.
+    # Which map and place search the web app uses (see app/maps.py): "ola" (Ola
+    # Maps) or "osm" (OpenStreetMap tiles with Photon search, free and keyless).
+    # Empty picks Ola when its key is set, else OpenStreetMap.
+    map_provider: Literal["", "ola", "osm"] = ""
+    # Ola Maps API key: vector tiles + Places Autocomplete. It is public by design
+    # (the browser sends it), so restrict it to the site's domains in Ola's console.
     ola_maps_api_key: str = ""
-    # Ads (see app/ads.py). Empty: no ads and no ad script on the page.
-    ads_provider: Literal["", "adsense"] = ""
-    # AdSense publisher id ("ca-pub-…") and one ad unit id per placement; a
-    # placement without a unit id shows nothing.
-    adsense_client: str = ""
-    adsense_slot_home: str = ""
-    adsense_slot_list: str = ""
-    adsense_slot_place: str = ""
     cors_origins: str = "http://localhost:5173,http://localhost:8080"
 
     @model_validator(mode="after")
@@ -65,8 +43,6 @@ class Settings(BaseSettings):
             raise ValueError(
                 f"MAP_PROVIDER={self.map_provider} requires {key_setting.upper()}"
             )
-        if self.ads_provider == "adsense" and not self.adsense_client.startswith("ca-pub-"):
-            raise ValueError("ADS_PROVIDER=adsense requires ADSENSE_CLIENT (ca-pub-…)")
         if self.app_env == "production" and not self.google_audiences:
             raise ValueError("Production requires GOOGLE_CLIENT_IDS (the only sign-in method)")
         return self

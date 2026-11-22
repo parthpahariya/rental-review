@@ -1,8 +1,8 @@
 /** Helpers shared by the providers' place searches. */
-import type { Area, Bounds, Point, Suggestion } from "./types";
+import type { Area, Bounds, Point } from "./types";
 
 /**
- * Google-style place types (Google, Ola) that describe an area rather than a
+ * Place types (as Ola Maps returns them) that describe an area rather than a
  * single building.
  */
 export function isAreaType(types: readonly string[]) {
@@ -52,20 +52,14 @@ export function areaFor(
   };
 }
 
-/** A suggestion whose place is already known, so picking it costs nothing. */
-export function known(area: Area): Suggestion {
-  return {
-    name: area.name,
-    detail: area.detail,
-    kind: area.exact ? "building" : "area",
-    resolve: () => Promise.resolve(area),
-  };
-}
-
 /** GET a provider URL as JSON, failing on any HTTP error. */
-export async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> {
+export async function getJson<T>(
+  url: string,
+  signal?: AbortSignal,
+): Promise<T> {
   const response = await fetch(url, { signal });
-  if (!response.ok) throw new Error(`Place search failed (${response.status}).`);
+  if (!response.ok)
+    throw new Error(`Place search failed (${response.status}).`);
   return response.json() as Promise<T>;
 }
 

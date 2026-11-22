@@ -1,6 +1,6 @@
 /**
  * The app's map. It doesn't draw anything itself: it loads the provider the
- * server is configured for (Google or OpenStreetMap, see src/maps/) and
+ * server is configured for (Ola Maps or OpenStreetMap, see src/maps/) and
  * renders that provider's map. App code imports only from here and
  * src/maps/types, never from a provider folder.
  */
@@ -30,7 +30,9 @@ export default function PropertyMap(props: MapProps) {
   if (failed) return <MapUnavailable />;
   // Same empty region while the provider loads, so the layout doesn't jump.
   if (!provider)
-    return <div className="property-map" role="region" aria-label={MAP_LABEL} />;
+    return (
+      <div className="property-map" role="region" aria-label={MAP_LABEL} />
+    );
   return (
     <MapBoundary>
       <provider.Map {...props} />

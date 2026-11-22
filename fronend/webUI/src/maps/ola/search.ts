@@ -1,5 +1,11 @@
 /** Place search with Ola Maps Places: Autocomplete, then Details if needed. */
-import { areaFor, getJson, isAreaType, isCityType, latestOnly } from "../places";
+import {
+  areaFor,
+  getJson,
+  isAreaType,
+  isCityType,
+  latestOnly,
+} from "../places";
 import type { PlaceSearch, Point, Suggestion } from "../types";
 
 const API = "https://api.olamaps.io/places/v1";

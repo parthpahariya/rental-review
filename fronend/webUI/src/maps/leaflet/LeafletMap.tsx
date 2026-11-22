@@ -1,7 +1,7 @@
 /**
  * The Leaflet map engine: pins, rating bubbles, draft and searched-place pins,
- * view reporting. It draws no map itself; each provider (OpenStreetMap, HERE,
- * Mapbox, Ola) hands it the base layer with that provider's map.
+ * view reporting. It draws no map itself; each provider (OpenStreetMap, Ola)
+ * hands it the base layer with that provider's map.
  */
 import { useEffect, useRef, useState, type ComponentType } from "react";
 import L from "leaflet";
@@ -52,7 +52,7 @@ export function rasterTiles(
 export type LeafletMapOptions = {
   /**
    * Tone the background down so rating pins stand out. For bright raster
-   * tiles (OpenStreetMap); designed styles (Ola, Mapbox, HERE) keep their own
+   * tiles (OpenStreetMap); designed styles (Ola) keep their own
    * colours, which muting would wash out.
    */
   muted?: boolean;

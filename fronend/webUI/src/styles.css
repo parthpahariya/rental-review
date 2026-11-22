@@ -1038,19 +1038,6 @@ select {
 .property-map {
   font: inherit;
 }
-/* Google provider: its map lives in this element, kept across visits. */
-.property-map-canvas {
-  position: absolute;
-  inset: 0;
-}
-/* Google anchors markers at their bottom centre (Leaflet uses iconAnchor):
-   leave room for the pin's pointer, and centre bubbles on their spot. */
-.property-map-canvas .map-pin {
-  margin-bottom: 6px;
-}
-.property-map-canvas .map-cluster {
-  translate: 0 50%;
-}
 /* OpenStreetMap provider (Leaflet) */
 .leaflet-container {
   font: inherit;
@@ -1060,8 +1047,8 @@ select {
 .leaflet-marker-icon {
   cursor: pointer;
 }
-/* Warm, muted OpenStreetMap tiles so rating pins carry the colour. Providers
-   with designed styles (Ola, Mapbox, HERE) are left as they are. */
+/* Warm, muted OpenStreetMap tiles so rating pins carry the colour. Ola's
+   designed style is left as it is. */
 .basemap-muted .leaflet-tile-pane {
   filter: sepia(0.25) saturate(0.45) brightness(1.03) contrast(0.92);
 }
@@ -1107,7 +1094,7 @@ select {
     white-space: normal;
   }
 }
-/* Shown in place of the map when Google Maps can't load. */
+/* Shown in place of the map when it can't load. */
 .map-unavailable {
   position: absolute;
   inset: 0;
@@ -1209,10 +1196,6 @@ select {
   inset: 7px;
   border-radius: 50%;
   background: white;
-}
-.property-map-canvas .map-searched {
-  /* Google anchors at the bottom centre; lift so the tip marks the spot. */
-  margin-bottom: 5px;
 }
 .map-cluster {
   cursor: pointer;
@@ -2103,37 +2086,4 @@ select {
     transform: translateX(-50%);
     white-space: nowrap;
   }
-}
-
-/* Ads: always labelled, visually separate from reviews and places. */
-.ad-slot {
-  display: block;
-  margin: 16px 0;
-  padding: 10px 12px 12px;
-  border: 1px dashed var(--line-strong);
-  border-radius: var(--r);
-  background: white;
-}
-/* AdSense marks a unit it has no ad for; drop the empty, labelled box. */
-.ad-slot:has(ins[data-ad-status="unfilled"]) {
-  display: none;
-}
-.ad-label {
-  display: block;
-  margin-bottom: 6px;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-.ad-home {
-  width: min(100% - 32px, 1100px);
-  margin: 24px auto;
-}
-.property-list .ad-item {
-  list-style: none;
-}
-.property-list .ad-item .ad-slot {
-  margin: 8px 0;
 }

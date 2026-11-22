@@ -1,9 +1,5 @@
 import { mapConfig } from "./config";
-import type {
-  CreateMapProvider,
-  MapProvider,
-  MapProviderName,
-} from "./types";
+import type { CreateMapProvider, MapProvider, MapProviderName } from "./types";
 
 /**
  * Every map provider, each in its own folder and its own bundle chunk, so a
@@ -12,9 +8,6 @@ import type {
  * server, see python/backend/app/maps.py).
  */
 const providers: Record<MapProviderName, () => Promise<CreateMapProvider>> = {
-  google: () => import("./google").then((m) => m.createGoogleProvider),
-  here: () => import("./here").then((m) => m.createHereProvider),
-  mapbox: () => import("./mapbox").then((m) => m.createMapboxProvider),
   ola: () => import("./ola").then((m) => m.createOlaProvider),
   osm: () => import("./osm").then((m) => m.createOsmProvider),
 };

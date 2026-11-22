@@ -98,11 +98,7 @@ Google is the only way to sign in; there is no password or phone sign-in. Accoun
 
 ### `GET /map/config` — Public
 
-`200`: `{ "data": { "provider": "google"|"here"|"mapbox"|"ola"|"osm", "api_key": string|null, "map_id": string|null } }`. `provider` is `MAP_PROVIDER`, or when that is unset `google` if `GOOGLE_MAPS_API_KEY` is set and `osm` otherwise. `api_key` is only the chosen provider's browser key (`GOOGLE_MAPS_API_KEY`, `HERE_API_KEY`, `MAPBOX_ACCESS_TOKEN` or `OLA_MAPS_API_KEY`; public by design, so restrict it by domain), and null for `osm`. `map_id` is set only for `google`: `GOOGLE_MAPS_MAP_ID`, falling back to `DEMO_MAP_ID` outside production.
-
-### `GET /ads/config` — Public
-
-`200`: `{ "data": { "provider": "adsense"|null, "client": string|null, "slots": { "home"?: string, "list"?: string, "place"?: string } } }`. `provider` is `ADS_PROVIDER` (null when unset: no ads, no ad script). `client` is the AdSense publisher id and `slots` the ad unit id per placement; placements without an id are omitted and show nothing. `GET /ads.txt` (served at the site root) returns the AdSense `ads.txt` line, or `404` when ads are off.
+`200`: `{ "data": { "provider": "ola"|"osm", "api_key": string|null } }`. `provider` is `MAP_PROVIDER`, or when that is unset `ola` if `OLA_MAPS_API_KEY` is set and `osm` otherwise. `api_key` is the Ola Maps browser key (public by design, so restrict it by domain in Ola's console), and null for `osm`.
 
 ### `POST /auth/google` — Public
 
@@ -180,7 +176,7 @@ Adds a new map pin together with its first flat, so a user can review a place th
 
 Request: `{ "address": nonblank_string (≤500), "building_name": nonblank_string (≤200) | null, "latitude": number, "longitude": number, "flat_label": nonblank_string (≤100) }`. `building_name` is optional. Coordinates must be finite WGS84 values.
 
-Locations are stored provider-neutral: WGS84 decimal-degree `latitude`/`longitude` plus the user-entered `address` and `building_name`. No map- or geocoder-specific identifiers, tile coordinates or zoom levels are stored, so the web client can switch map providers (e.g. Leaflet/OpenStreetMap to Google Maps) without a data migration.
+Locations are stored provider-neutral: WGS84 decimal-degree `latitude`/`longitude` plus the user-entered `address` and `building_name`. No map- or geocoder-specific identifiers, tile coordinates or zoom levels are stored, so the web client can switch map providers (e.g. OpenStreetMap to Ola Maps) without a data migration.
 
 `201`: `{ "data": Flat }`; `Location: /api/v1/flats/{flat_id}`. Errors: `409 LOCATION_ALREADY_EXISTS` when the pin duplicates an existing location: with a `building_name`, an existing location with the same name (case- and whitespace-insensitive) within 100 metres; without one, any existing location within 30 metres. Differently named buildings may sit next to each other. Users should review or add a flat to the existing location instead. Creation is serialized so two concurrent pins at the same spot cannot both succeed. The new location appears with `reviewed_only=false` immediately, and with the default filter once it has a review.
 

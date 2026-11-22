@@ -72,7 +72,7 @@ export default function LocalitySearch({
   // Read when a request starts, so moving the map doesn't restart typing.
   const nearRef = useRef(near);
   nearRef.current = near;
-  // The map provider's search (Google or OpenStreetMap), made on first use.
+  // The map provider's search (Ola Maps or OpenStreetMap), made on first use.
   const search = useRef<PlaceSearch | null>(null);
   const [attribution, setAttribution] = useState("");
   useEffect(() => {
@@ -80,7 +80,7 @@ export default function LocalitySearch({
     setError("");
     if (term.length < MIN_SEARCH) return;
     // Typed coordinates go straight to that spot; two numbers are never sent
-    // to a provider (Mapbox rejects them, others return noise).
+    // to a provider, which would only return noise.
     if (looksLikeCoordinates(term)) {
       const point = parseCoordinates(term);
       const area = point && coordinatesArea(point);
@@ -103,7 +103,7 @@ export default function LocalitySearch({
     // Show "Finding places…" during the typing pause too, not "No places".
     setBusy(true);
     // Wait for a pause in typing, then look in Rental Review first (free) and
-    // ask the map provider (Google is billed) only when too few listed
+    // ask the map provider (Ola is billed) only when too few listed
     // buildings match.
     const timer = setTimeout(async () => {
       const listed = await searchListed(term).catch(() => []);
@@ -135,7 +135,7 @@ export default function LocalitySearch({
     };
   }, [term]);
   // Nothing is suggested until something is typed: a list of nearby areas
-  // would cost a paid Google lookup every time the box is opened.
+  // would cost a paid provider lookup every time the box is opened.
   const options = term.length < MIN_SEARCH ? [] : areas;
   useEffect(() => setActive(-1), [term, options.length]);
   useEffect(() => {
@@ -155,7 +155,7 @@ export default function LocalitySearch({
       .catch(() => setError("We couldn’t open that place. Try another."))
       .finally(() => {
         setOpening(false);
-        // The pick ends the provider's search session (Google bills by it).
+        // The pick ends the provider's search session, if it keeps one.
         search.current?.finish();
       });
   }
