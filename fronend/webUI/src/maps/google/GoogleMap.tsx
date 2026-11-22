@@ -17,6 +17,7 @@ import {
   clusterLabel,
   clusterRadius,
   pinLabel,
+  searchedElement,
   validBounds,
   wrapLongitude,
 } from "../shared";
@@ -36,6 +37,7 @@ export default function GoogleMap({
   highlighted = null,
   onHover,
   focus = null,
+  searched = null,
   partial = false,
 }: MapProps) {
   const element = useRef<HTMLDivElement>(null);
@@ -55,6 +57,7 @@ export default function GoogleMap({
   const highlight = useRef<string | null>(null);
   const lit = useRef<Element | null>(null);
   const draftMarker = useRef<Pin | null>(null);
+  const searchedMarker = useRef<Pin | null>(null);
   const select = useRef(onSelect);
   const pick = useRef(onPick);
   const viewChange = useRef(onViewChange);
@@ -127,6 +130,8 @@ export default function GoogleMap({
       // screen's pins and draft pin go.
       clusterer.current?.clearMarkers();
       if (draftMarker.current) draftMarker.current.map = null;
+      if (searchedMarker.current) searchedMarker.current.map = null;
+      searchedMarker.current = null;
       kept?.canvas.remove();
       map.current = null;
       clusterer.current = null;
@@ -310,6 +315,27 @@ export default function GoogleMap({
     }
     if (!instance.getBounds()?.contains(at)) instance.panTo(at);
   }, [draft, ready]);
+  useEffect(() => {
+    const instance = map.current;
+    const g = lib.current;
+    if (!instance || !g) return;
+    if (!searched) {
+      if (searchedMarker.current) searchedMarker.current.map = null;
+      searchedMarker.current = null;
+      return;
+    }
+    const at = { lat: searched.latitude, lng: searched.longitude };
+    if (searchedMarker.current) searchedMarker.current.position = at;
+    else
+      searchedMarker.current = new g.marker.AdvancedMarkerElement({
+        map: instance,
+        position: at,
+        // Above rating pins, below the draft pin being placed.
+        zIndex: 2500,
+        title: "Searched place",
+        content: searchedElement(),
+      });
+  }, [searched?.latitude, searched?.longitude, ready]);
   // Google draws its own error box into the map element; show ours instead.
   if (failed) return <MapUnavailable />;
   return (

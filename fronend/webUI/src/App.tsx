@@ -986,6 +986,7 @@ export default function App() {
               partial={more}
               insetLeft={listHidden ? 0 : inset}
               focus={focus}
+              searched={area?.exact ? area.center : null}
               highlighted={hovered}
               onHover={setHovered}
             />

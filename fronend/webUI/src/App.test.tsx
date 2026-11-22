@@ -101,9 +101,11 @@ vi.mock("./Map", async () => {
     default: ({
       onViewChange,
       onPick,
+      searched,
     }: {
       onViewChange?: (v: unknown) => void;
       onPick?: (p: { latitude: number; longitude: number }) => void;
+      searched?: { latitude: number; longitude: number } | null;
     }) => {
       useEffect(() => {
         if (mapView.current) onViewChange?.(mapView.current);
@@ -116,6 +118,11 @@ vi.mock("./Map", async () => {
           >
             Tap the map here
           </button>
+          {searched && (
+            <span>
+              Searched place at {searched.latitude},{searched.longitude}
+            </span>
+          )}
         </div>
       );
     },
@@ -265,6 +272,8 @@ describe("Rental Review", () => {
       screen.getByRole("button", { name: "Area: Indiranagar. Change area" }),
     ).toHaveTextContent("Indiranagar");
     expect(indiranagar.place.fetchFields).toHaveBeenCalled();
+    // An area is fitted on screen, not marked with a pin.
+    expect(screen.queryByText(/Searched place/)).not.toBeInTheDocument();
   });
 
   it("finds buildings and keeps one search session until a pick", async () => {
@@ -294,6 +303,10 @@ describe("Rental Review", () => {
       }),
     ).toBeInTheDocument();
     expect(prestige.place.fetchFields).toHaveBeenCalled();
+    // The map marks the building the visitor picked.
+    expect(
+      screen.getByText("Searched place at 12.9886,77.7287"),
+    ).toBeInTheDocument();
     // A new search after the pick starts a new session.
     await user.type(
       screen.getByRole("combobox", { name: /Search for a locality/ }),
@@ -318,6 +331,17 @@ describe("Rental Review", () => {
         {
           geometry: { coordinates: [77.6443636, 12.9810684] },
           properties: { name: "Indiranagar", type: "district" },
+        },
+        {
+          // An apartment complex, mapped as named residential land.
+          geometry: { coordinates: [77.5927, 12.8733] },
+          properties: {
+            name: "Indira Elysian",
+            type: "locality",
+            osm_key: "landuse",
+            osm_value: "residential",
+            extent: [77.5911502, 12.8738344, 77.5942017, 12.8728041],
+          },
         },
         {
           geometry: { coordinates: [79.9, 6.9] },
@@ -369,6 +393,21 @@ describe("Rental Review", () => {
       await screen.findByRole("button", {
         name: "Area: Indiranagar. Change area",
       }),
+    ).toBeInTheDocument();
+    // A neighbourhood is fitted on screen without a pin…
+    expect(screen.queryByText(/Searched place/)).not.toBeInTheDocument();
+    // …but an apartment complex is centred and marked.
+    const box = screen.getAllByRole("combobox", {
+      name: /Search for a locality/,
+    })[0];
+    await user.clear(box);
+    await user.type(box, "Indira Ely");
+    await user.click(
+      await screen.findByRole("option", { name: /^Indira Elysian/ }),
+    );
+    expect(
+      // The middle of the complex's footprint.
+      await screen.findByText(/^Searched place at 12\.8733\d*,77\.5926\d*$/),
     ).toBeInTheDocument();
   });
 

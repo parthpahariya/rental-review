@@ -49,6 +49,7 @@ function toArea(
           }
         : undefined,
     zoom: !area ? 18 : isCity(types) ? 12 : 15,
+    exact: !area,
   };
 }
 
