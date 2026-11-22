@@ -1,0 +1,5 @@
+// Google sign-in for iOS. Create an "iOS" OAuth client in Google Cloud Console
+// (bundle id com.boringman.rentalreview), then set both values below. Also add
+// the client id to the backend's GOOGLE_CLIENT_IDS (after the web client id).
+GOOGLE_IOS_CLIENT_ID =
+GOOGLE_REVERSED_CLIENT_ID = com.googleusercontent.apps.unset

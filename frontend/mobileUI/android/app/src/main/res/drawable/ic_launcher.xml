@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The site's mark: a house outline on amber. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="50"
+    android:viewportHeight="50">
+    <path
+        android:fillColor="#F59E0B"
+        android:pathData="M12,0h26a12,12 0,0 1,12 12v26a12,12 0,0 1,-12 12H12A12,12 0,0 1,0 38V12A12,12 0,0 1,12 0z" />
+    <path
+        android:strokeColor="#0F172A"
+        android:strokeWidth="3"
+        android:strokeLineJoin="round"
+        android:pathData="M10,24L25,11L40,24M15,21v18h20V21M22,39V28h7v11" />
+</vector>
