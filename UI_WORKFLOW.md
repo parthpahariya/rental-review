@@ -171,6 +171,5 @@ Ordered by impact on how trustworthy the app feels.
    using `--info`), the strongest trust signal for readers.
 4. **Filter chips** above the list: *Has reviews* · *4★+* · *Has interactions*.
 5. **Dark mode** using the token set in MASTER.md, with every colour pair re-checked.
-6. **Mobile app:** the same flows in React Native. Google's terms require Places
-   search results to be shown on a Google map, so the map would use the Google Maps
-   SDKs (for example via `react-native-maps`) rather than MapLibre.
+6. **Mobile app:** the same flows in React Native, with the map on MapLibre (Ola
+   Maps' vector style or OpenStreetMap), matching the web providers.

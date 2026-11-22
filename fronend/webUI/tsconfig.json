@@ -14,8 +14,7 @@
     "types": [
       "vite/client",
       "vitest/globals",
-      "@testing-library/jest-dom",
-      "google.maps"
+      "@testing-library/jest-dom"
     ]
   },
   "include": ["src", "vite.config.ts"]

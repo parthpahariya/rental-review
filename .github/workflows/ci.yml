@@ -179,8 +179,7 @@ jobs:
       GCP_VM_USER: ${{ vars.GCP_VM_USER }}
       GOOGLE_CLIENT_IDS: ${{ vars.GOOGLE_CLIENT_IDS }}
       MAP_PROVIDER: ${{ vars.MAP_PROVIDER }}
-      GOOGLE_MAPS_API_KEY: ${{ vars.GOOGLE_MAPS_API_KEY }}
-      GOOGLE_MAPS_MAP_ID: ${{ vars.GOOGLE_MAPS_MAP_ID }}
+      OLA_MAPS_API_KEY: ${{ vars.OLA_MAPS_API_KEY }}
       SECRET_KEY: ${{ secrets.SECRET_KEY }}
       GCP_SSH_PRIVATE_KEY: ${{ secrets.GCP_SSH_PRIVATE_KEY }}
       GCP_SSH_KNOWN_HOSTS: ${{ secrets.GCP_SSH_KNOWN_HOSTS }}

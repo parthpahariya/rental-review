@@ -1,29 +1,36 @@
 import { describe, expect, it, vi } from "vitest";
+import type { MapProviderName } from "./types";
 
-const config = vi.hoisted(() => ({ provider: "google" as "google" | "osm" }));
+const config = vi.hoisted(() => ({
+  provider: "ola" as MapProviderName,
+  api_key: "test-key" as string | null,
+}));
 vi.mock("./config", () => ({
   mapConfig: () =>
-    Promise.resolve({ provider: config.provider, api_key: null, map_id: null }),
+    Promise.resolve({
+      provider: config.provider,
+      api_key: config.api_key,
+    }),
 }));
 
 import { loadMapProvider } from "./provider";
 
 describe("loadMapProvider", () => {
-  it("loads the provider the server is configured for", async () => {
-    config.provider = "google";
-    const google = await loadMapProvider();
-    expect(google.name).toBe("google");
-    expect(google.searchAttribution).toBe("Powered by Google");
-    config.provider = "osm";
-    const osm = await loadMapProvider();
-    expect(osm.name).toBe("osm");
-    expect(osm.searchAttribution).toMatch(/OpenStreetMap/);
-    // Both implement the same contract the app uses.
-    for (const p of [google, osm]) {
-      expect(typeof p.Map).toBe("function");
-      const search = p.createSearch();
+  it.each<[MapProviderName, RegExp]>([
+    ["ola", /Ola Maps/],
+    ["osm", /OpenStreetMap/],
+  ])(
+    "loads %s, which implements the same contract",
+    async (name, attribution) => {
+      config.provider = name;
+      config.api_key = name === "osm" ? null : "test-key";
+      const provider = await loadMapProvider();
+      expect(provider.name).toBe(name);
+      expect(provider.searchAttribution).toMatch(attribution);
+      expect(typeof provider.Map).toBe("function");
+      const search = provider.createSearch();
       expect(typeof search.search).toBe("function");
       expect(typeof search.finish).toBe("function");
-    }
-  });
+    },
+  );
 });

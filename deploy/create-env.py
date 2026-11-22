@@ -8,7 +8,8 @@ from pathlib import Path
 
 REQUIRED = ("SECRET_KEY", "GOOGLE_CLIENT_IDS")
 # May be left unset; an empty value is written.
-OPTIONAL = ("MAP_PROVIDER", "GOOGLE_MAPS_API_KEY", "GOOGLE_MAPS_MAP_ID")
+OPTIONAL = ("MAP_PROVIDER", "OLA_MAPS_API_KEY")
+MAP_PROVIDERS = ("ola", "osm")
 NAMES = REQUIRED + OPTIONAL
 
 
@@ -25,8 +26,8 @@ def check(name, value):
         part.strip().endswith(".apps.googleusercontent.com") for part in value.split(",")
     ):
         raise SystemExit("GOOGLE_CLIENT_IDS must be Google OAuth client ids, comma-separated.")
-    if name == "MAP_PROVIDER" and value not in ("google", "osm"):
-        raise SystemExit('MAP_PROVIDER must be "google", "osm" or unset.')
+    if name == "MAP_PROVIDER" and value not in MAP_PROVIDERS:
+        raise SystemExit("MAP_PROVIDER must be one of " + ", ".join(MAP_PROVIDERS) + " or unset.")
 
 
 def main():

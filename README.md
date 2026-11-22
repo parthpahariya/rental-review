@@ -39,9 +39,14 @@ The default setup seeds four **fictional** Bengaluru buildings, five flats, tena
 
 Sign-in is **Google only**. Create an OAuth client ID of type "Web application" in Google Cloud Console (APIs & Services → Credentials), add every origin you open the site on (for example `http://localhost:8080` and `http://localhost:5173`) under *Authorized JavaScript origins*, and set `GOOGLE_CLIENT_IDS` in `.env`. Without it the sign-in dialog says Google sign-in is unavailable and nobody can sign in. The first Google sign-in creates an account; later sign-ins reuse it, keyed on Google's stable account id rather than the email.
 
-The map and search box come from one of two providers, chosen by `MAP_PROVIDER`: `google` (Google Maps with Google Places search) or `osm` (Leaflet on OpenStreetMap tiles with Photon search: free and keyless, but it suggests localities only). Left empty, Google is used when `GOOGLE_MAPS_API_KEY` is set and OpenStreetMap otherwise. Each provider lives in its own folder under `fronend/webUI/src/maps/` and implements the same contract (`src/maps/types.ts`), so the rest of the app never depends on either; the browser downloads only the chosen one. Search always lists buildings already on Rental Review first, for free.
+The map and search box come from one provider, chosen by `MAP_PROVIDER`:
 
-For Google, in the same Google Cloud project, enable the **Maps JavaScript API** and **Places API (New)**, create an API key restricted to those two APIs and to your origins as HTTP referrers (for example `http://localhost:8080/*` and `http://localhost:5173/*`), and set `GOOGLE_MAPS_API_KEY` in `.env`. `GOOGLE_MAPS_MAP_ID` is optional in development (Google's demo map ID is used); create a vector Map ID for production. Without a key the map says it is unavailable and the property list still works. Search only moves the map: a new place is saved at the pin the user taps or drags, never at coordinates copied from Google, so stored locations stay provider-neutral.
+| `MAP_PROVIDER` | Map | Search | Key setting |
+| --- | --- | --- | --- |
+| `ola` | Ola Maps vector style (MapLibre in Leaflet) | Ola Places Autocomplete | `OLA_MAPS_API_KEY` |
+| `osm` | OpenStreetMap tiles (Leaflet) | Photon | none |
+
+Left empty, Ola is used when `OLA_MAPS_API_KEY` is set and OpenStreetMap otherwise; `MAP_PROVIDER=ola` without a key stops the backend at startup. Create the Ola key in the Krutrim Cloud console (Ola Maps → Maps Credentials) and add your domains (e.g. `localhost`) to its allowed list: the key reaches the browser. Each provider lives in its own folder under `fronend/webUI/src/maps/` and implements one contract (`src/maps/types.ts`); both use the shared Leaflet engine (`src/maps/leaflet/`), so pins, clusters and the searched-place marker behave the same. The browser downloads only the chosen provider. Search always lists buildings already on Rental Review first, for free, and accepts typed coordinates. Search only moves the map: a new place is saved at the pin the user taps or drags, so stored locations are plain WGS84 coordinates and user text, and switching providers needs no migration.
 
 ```sh
 docker compose logs -f --tail=100
@@ -68,7 +73,7 @@ files change. Press Ctrl+C to stop watching; the stack keeps running.
 
 ## Included behavior
 
-- Map with pan, zoom, keyboard markers and clustered rating pins, and place search across India, from Google Maps or OpenStreetMap (set by `MAP_PROVIDER`), and an equivalent searchable property list. Select a building, then a flat; switch between Tenant Reviews and Interactions.
+- Map with pan, zoom, keyboard markers and clustered rating pins, and place search across India, from Ola Maps or OpenStreetMap (set by `MAP_PROVIDER`), and an equivalent searchable property list. Select a building, then a flat; switch between Tenant Reviews and Interactions.
 - Google sign-in (ID tokens verified server-side against Google's keys, audience, issuer, expiry, and verified email); PostgreSQL-backed per-IP rate limit; hashed opaque sessions; sign-out; confirmed deactivation and reactivation.
 - Owner names belong to individual reviews. Each tenant review includes rating, feedback, and immutable tenancy dates. A flat-row lock makes conflicting submissions by different tenants atomic. Adjacent tenancy periods and overlapping reviews by the same author are supported.
 - Authors can edit rating and feedback for 30 days. They can request deletion at any time; an admin must approve it. Approved deletion updates public views, rating aggregates, and tenancy availability atomically.
@@ -81,7 +86,7 @@ files change. Press Ctrl+C to stop watching; the stack keeps running.
 
 ```text
 python/backend/          FastAPI, SQLAlchemy models, Alembic migrations, pytest
-fronend/webUI/           React, TypeScript, Vite, Google Maps JS API or Leaflet, Vitest, Nginx
+fronend/webUI/           React, TypeScript, Vite, Leaflet (+ MapLibre for Ola), Vitest, Nginx
 compose.yaml            Application stack and resource limits
 compose.test.yaml       Isolated PostgreSQL 18.6 integration-test stack (never the shared database)
 compose.ci.yaml         GitLab Docker-in-Docker port override

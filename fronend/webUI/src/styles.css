@@ -538,7 +538,25 @@ svg {
   min-height: 52px;
 }
 .locality-search.compact {
+  position: relative;
   max-width: none;
+}
+/* In the top bar there's no room below the box: float the message instead. */
+.locality-search.compact .locality-error {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: var(--r);
+  background: white;
+  box-shadow: var(--shadow);
+}
+.locality-options li.locality-status.error {
+  color: var(--poor);
+  font-weight: 500;
 }
 .compact .search-form {
   padding: 4px 4px 4px 16px;
@@ -1020,19 +1038,6 @@ select {
 .property-map {
   font: inherit;
 }
-/* Google provider: its map lives in this element, kept across visits. */
-.property-map-canvas {
-  position: absolute;
-  inset: 0;
-}
-/* Google anchors markers at their bottom centre (Leaflet uses iconAnchor):
-   leave room for the pin's pointer, and centre bubbles on their spot. */
-.property-map-canvas .map-pin {
-  margin-bottom: 6px;
-}
-.property-map-canvas .map-cluster {
-  translate: 0 50%;
-}
 /* OpenStreetMap provider (Leaflet) */
 .leaflet-container {
   font: inherit;
@@ -1042,8 +1047,9 @@ select {
 .leaflet-marker-icon {
   cursor: pointer;
 }
-/* Warm, muted basemap so rating pins carry the colour. */
-.leaflet-tile-pane {
+/* Warm, muted OpenStreetMap tiles so rating pins carry the colour. Ola's
+   designed style is left as it is. */
+.basemap-muted .leaflet-tile-pane {
   filter: sepia(0.25) saturate(0.45) brightness(1.03) contrast(0.92);
 }
 .leaflet-control-zoom {
@@ -1063,7 +1069,32 @@ select {
   font-size: 11px;
 }
 
-/* Shown in place of the map when Google Maps can't load. */
+/* Over a map whose background the provider refused; pins still work. */
+.map-notice {
+  position: absolute;
+  z-index: 500;
+  top: 16px;
+  left: calc(var(--panel-w) + var(--panel-gap) * 2);
+  right: 16px;
+  margin: 0 auto;
+  width: max-content;
+  max-width: calc(100% - var(--panel-w) - var(--panel-gap) * 4);
+  padding: 10px 16px;
+  border-radius: 999px;
+  background: white;
+  box-shadow: var(--shadow);
+  color: var(--muted);
+  font-size: 14px;
+  pointer-events: none;
+}
+@media (max-width: 860px) {
+  .map-notice {
+    left: 16px;
+    max-width: calc(100% - 32px);
+    white-space: normal;
+  }
+}
+/* Shown in place of the map when it can't load. */
 .map-unavailable {
   position: absolute;
   inset: 0;
@@ -1165,10 +1196,6 @@ select {
   inset: 7px;
   border-radius: 50%;
   background: white;
-}
-.property-map-canvas .map-searched {
-  /* Google anchors at the bottom centre; lift so the tip marks the spot. */
-  margin-bottom: 5px;
 }
 .map-cluster {
   cursor: pointer;

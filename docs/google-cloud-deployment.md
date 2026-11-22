@@ -35,11 +35,9 @@ from meal-manager's and only install or change rental-review's own files.
 3. **Google sign-in:** in Google Cloud Console → APIs & Services → Credentials, add
    `https://rentalreview.boringman.in` to the OAuth client's *Authorized JavaScript
    origins*.
-4. **Google Maps:** in the same project, enable the *Maps JavaScript API* and
-   *Places API (New)*. Create an API key restricted to those two APIs and to the
-   HTTP referrer `https://rentalreview.boringman.in/*`, and a vector Map ID under
-   *Map Management*. Set a budget alert on the billing account: Maps is billed
-   per map load and per search pick beyond the monthly free caps.
+4. **Ola Maps (optional):** in the Krutrim Cloud console, create an Ola Maps API
+   key and add `rentalreview.boringman.in` to its allowed domains. Without it the
+   site uses the free OpenStreetMap map.
 5. **GitHub:** under repository **Settings → Environments**, create `production`
    and add:
 
@@ -48,9 +46,8 @@ from meal-manager's and only install or change rental-review's own files.
    | Variable | `GCP_VM_HOST` | Same as meal-manager |
    | Variable | `GCP_VM_USER` | Same as meal-manager |
    | Variable | `GOOGLE_CLIENT_IDS` | The OAuth web client id (`….apps.googleusercontent.com`) |
-   | Variable | `MAP_PROVIDER` | `google` or `osm` (optional; empty picks Google when a key is set) |
-   | Variable | `GOOGLE_MAPS_API_KEY` | The referrer-restricted Maps browser key (optional; without it the map is unavailable) |
-   | Variable | `GOOGLE_MAPS_MAP_ID` | The vector Map ID (optional) |
+   | Variable | `MAP_PROVIDER` | `ola` or `osm` (optional; empty picks Ola when its key is set) |
+   | Variable | `OLA_MAPS_API_KEY` | The domain-restricted Ola Maps key (optional) |
    | Secret | `GCP_SSH_PRIVATE_KEY` | Same private key as meal-manager's deploy key |
    | Secret | `GCP_SSH_KNOWN_HOSTS` | Same verified known-hosts line as meal-manager |
    | Secret | `SECRET_KEY` | New random value, 32+ chars |

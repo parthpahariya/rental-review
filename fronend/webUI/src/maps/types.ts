@@ -1,5 +1,5 @@
 /**
- * The contract between the app and a map provider (Google, OpenStreetMap).
+ * The contract between the app and a map provider (Ola Maps, OpenStreetMap).
  * App code only uses these types; each provider implements them in its own
  * folder, so switching providers never touches the screens.
  */
@@ -76,7 +76,14 @@ export interface PlaceSearch {
   finish(): void;
 }
 
-export type MapProviderName = "google" | "osm";
+export type MapProviderName = "ola" | "osm";
+
+/** The server's map settings (GET /map/config). */
+export type MapConfig = {
+  provider: MapProviderName;
+  /** The chosen provider's browser key (public by design); none for OSM. */
+  api_key: string | null;
+};
 
 export type MapProvider = {
   name: MapProviderName;
@@ -85,3 +92,6 @@ export type MapProvider = {
   /** Credit the provider's terms require under its search results. */
   searchAttribution: string;
 };
+
+/** Each provider module exports one of these; it gets the server's settings. */
+export type CreateMapProvider = (config: MapConfig) => MapProvider;
