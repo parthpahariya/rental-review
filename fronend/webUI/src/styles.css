@@ -1145,6 +1145,31 @@ select {
   color: var(--ink);
   cursor: grab;
 }
+/* A searched place: a classic teardrop pin, so it reads as "here", not as a
+   rated building. It never takes clicks; taps reach the map beneath. */
+.map-searched {
+  position: relative;
+  display: block;
+  width: 26px;
+  height: 26px;
+  border-radius: 50% 50% 50% 0;
+  background: #e11d48;
+  border: 3px solid white;
+  box-shadow: var(--shadow-lg);
+  transform: rotate(-45deg);
+  pointer-events: none;
+}
+.map-searched::after {
+  content: "";
+  position: absolute;
+  inset: 7px;
+  border-radius: 50%;
+  background: white;
+}
+.property-map-canvas .map-searched {
+  /* Google anchors at the bottom centre; lift so the tip marks the spot. */
+  margin-bottom: 5px;
+}
 .map-cluster {
   cursor: pointer;
   display: flex;

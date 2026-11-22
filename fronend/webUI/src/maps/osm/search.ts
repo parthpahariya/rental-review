@@ -13,9 +13,25 @@ type PhotonFeature = {
     county?: string;
     state?: string;
     countrycode?: string;
+    osm_key?: string;
+    osm_value?: string;
     extent?: [number, number, number, number];
   };
 };
+
+/**
+ * A single building or housing complex rather than a neighbourhood. In India
+ * apartment societies are usually mapped as named residential land, e.g.
+ * "Prestige Elysian" is landuse=residential, which Photon files under
+ * "locality" just like real neighbourhoods.
+ */
+function isBuilding(p: PhotonFeature["properties"]) {
+  return (
+    p.type === "house" ||
+    p.osm_key === "building" ||
+    (p.osm_key === "landuse" && p.osm_value === "residential")
+  );
+}
 
 function toAreas(features: PhotonFeature[]): Area[] {
   const areas: Area[] = [];
@@ -39,6 +55,19 @@ function toAreas(features: PhotonFeature[]): Area[] {
       .filter((x) => x && x !== p.name)
       .join(", ");
     const e = p.extent;
+    if (isBuilding(p)) {
+      // Centre on the complex itself, close up, and mark it on the map.
+      areas.push({
+        name: p.name,
+        detail,
+        center: e
+          ? { latitude: (e[1] + e[3]) / 2, longitude: (e[0] + e[2]) / 2 }
+          : { latitude, longitude },
+        zoom: 17,
+        exact: true,
+      });
+      continue;
+    }
     areas.push({
       name: p.name,
       detail,
@@ -53,9 +82,8 @@ function toAreas(features: PhotonFeature[]): Area[] {
 }
 
 /**
- * Localities in India from Photon. With `near`, matches are ranked by distance
- * from that point. OpenStreetMap knows few apartment names in India, so this
- * suggests areas only; buildings are found on the map.
+ * Localities, and the apartment complexes OpenStreetMap knows, in India from
+ * Photon. With `near`, matches are ranked by distance from that point.
  */
 export function createOsmSearch(): PlaceSearch {
   let inFlight: AbortController | null = null;
@@ -88,7 +116,7 @@ export function createOsmSearch(): PlaceSearch {
         .map((area) => ({
           name: area.name,
           detail: area.detail,
-          kind: "area" as const,
+          kind: area.exact ? ("building" as const) : ("area" as const),
           resolve: () => Promise.resolve(area),
         }));
     },

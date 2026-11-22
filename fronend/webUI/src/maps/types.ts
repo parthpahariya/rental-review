@@ -37,6 +37,11 @@ export type MapProps = {
   onHover?: (id: string | null) => void;
   focus?: Focus | null;
   /**
+   * A place the visitor searched for, marked so they can see which building
+   * it is. Only a marker: it is not a stored place and can't be clicked.
+   */
+  searched?: Point | null;
+  /**
    * True when only some of the places in view are loaded (the per-view cap).
    * Bubble counts are then lower bounds and show as round numbers with "+".
    */
@@ -50,6 +55,8 @@ export type Area = {
   center: Point;
   bounds?: Bounds;
   zoom?: number;
+  /** A single building rather than an area: the map marks its spot. */
+  exact?: boolean;
 };
 
 /** One line in the suggestion list; its place is looked up only when chosen. */

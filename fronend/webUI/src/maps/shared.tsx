@@ -53,6 +53,13 @@ export function clusterRadius(zoom: number) {
   return 60;
 }
 
+/** The marker for a searched place: a classic map pin, unlike rating pins. */
+export function searchedElement() {
+  const span = document.createElement("span");
+  span.className = "map-searched";
+  return span;
+}
+
 /** The rating label on a building's pin. */
 export function pinLabel(averageRating: number | null) {
   return averageRating == null ? "New" : `★ ${averageRating.toFixed(1)}`;

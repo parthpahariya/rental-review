@@ -12,6 +12,7 @@ import {
   clusterLabel,
   clusterRadius,
   pinLabel,
+  searchedElement,
   validBounds,
   wrapLongitude,
 } from "../shared";
@@ -28,6 +29,7 @@ export default function LeafletMap({
   highlighted = null,
   onHover,
   focus = null,
+  searched = null,
   partial = false,
 }: MapProps) {
   const element = useRef<HTMLDivElement>(null);
@@ -39,6 +41,7 @@ export default function LeafletMap({
   const byIdLocation = useRef(new Map<string, Location>());
   const highlight = useRef<string | null>(null);
   const draftMarker = useRef<L.Marker | null>(null);
+  const searchedMarker = useRef<L.Marker | null>(null);
   const select = useRef(onSelect);
   const pick = useRef(onPick);
   const viewChange = useRef(onViewChange);
@@ -113,6 +116,7 @@ export default function LeafletMap({
       byId.current.clear();
       pinKeys.current.clear();
       draftMarker.current = null;
+      searchedMarker.current = null;
     };
   }, []);
   // Pins are updated in place rather than cleared and rebuilt on every response:
@@ -285,6 +289,31 @@ export default function LeafletMap({
     }
     if (!instance.getBounds().contains(at)) instance.panTo(at);
   }, [draft]);
+  useEffect(() => {
+    const instance = map.current;
+    if (!instance) return;
+    if (!searched) {
+      searchedMarker.current?.remove();
+      searchedMarker.current = null;
+      return;
+    }
+    const at: L.LatLngExpression = [searched.latitude, searched.longitude];
+    if (searchedMarker.current) searchedMarker.current.setLatLng(at);
+    else
+      searchedMarker.current = L.marker(at, {
+        // Only marks the spot: taps go through to the map underneath.
+        interactive: false,
+        keyboard: false,
+        zIndexOffset: 900,
+        title: "Searched place",
+        icon: L.divIcon({
+          className: "",
+          html: searchedElement().outerHTML,
+          iconSize: [26, 26],
+          iconAnchor: [13, 30],
+        }),
+      }).addTo(instance);
+  }, [searched?.latitude, searched?.longitude]);
   return (
     <div
       ref={element}
