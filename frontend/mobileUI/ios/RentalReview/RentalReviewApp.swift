@@ -3,12 +3,12 @@ import SwiftUI
 
 @main
 struct RentalReviewApp: App {
-    @State private var model = AppModel()
+    @StateObject private var model = AppModel()
 
     var body: some Scene {
         WindowGroup {
             ContentView()
-                .environment(model)
+                .environmentObject(model)
                 // Google's sign-in sheet returns to the app through this URL.
                 .onOpenURL { GIDSignIn.sharedInstance.handle($0) }
         }
@@ -16,10 +16,9 @@ struct RentalReviewApp: App {
 }
 
 struct ContentView: View {
-    @Environment(AppModel.self) private var model
+    @EnvironmentObject private var model: AppModel
 
     var body: some View {
-        @Bindable var model = model
         ZStack(alignment: .bottom) {
             switch model.screen {
             case .home: HomeView()
@@ -31,7 +30,7 @@ struct ContentView: View {
                     .background(Brand.ink, in: RoundedRectangle(cornerRadius: 12)).padding(.bottom, 24).padding(.horizontal, 16)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                     .task(id: message) {
-                        try? await Task.sleep(for: .seconds(3))
+                        try? await pause(milliseconds: 3000)
                         if model.message == message { model.message = nil }
                     }
             }

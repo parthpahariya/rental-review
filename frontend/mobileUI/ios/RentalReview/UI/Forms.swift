@@ -11,7 +11,7 @@ private let dayFormat: DateFormatter = {
 /// Share or edit a tenant review, or share an interaction. Reviews name no
 /// one: the prompt asks for facts about the flat, not names or contact details.
 struct FeedbackForm: View {
-    @Environment(AppModel.self) private var model
+    @EnvironmentObject private var model: AppModel
     @Environment(\.dismiss) private var dismiss
     let tab: FeedbackTab
     var editing: Review?
@@ -25,7 +25,7 @@ struct FeedbackForm: View {
     private var isReview: Bool { tab == .tenant }
 
     var body: some View {
-        NavigationStack {
+        CompatNavigation {
             Form {
                 if let flat = model.flat { Text("\(flat.location.title) · Flat \(flat.label)").foregroundStyle(Brand.muted) }
                 if isReview {
@@ -50,9 +50,8 @@ struct FeedbackForm: View {
                     DatePicker("Interaction date", selection: $date, displayedComponents: .date)
                 }
                 Section(isReview ? "Your experience" : "What happened?") {
-                    TextField("Describe your own experience of the flat: repairs, deposit, communication. Stick to facts, and don’t name people or share contact details.",
-                              text: $text, axis: .vertical)
-                        .lineLimit(5...12)
+                    MultilineField(placeholder: "Describe your own experience of the flat: repairs, deposit, communication. Stick to facts, and don’t name people or share contact details.",
+                                   text: $text, minLines: 5, maxLines: 12)
                 }
                 Text(isReview
                      ? "Reviews are published immediately. Ratings and feedback can be edited for 30 days; tenancy dates stay fixed."
@@ -95,7 +94,7 @@ struct FeedbackForm: View {
 
 /// Add a building at the map's crosshair, with its first flat.
 struct AddPlaceForm: View {
-    @Environment(AppModel.self) private var model
+    @EnvironmentObject private var model: AppModel
     @Environment(\.dismiss) private var dismiss
     let at: GeoPoint
     let onAdded: () -> Void
@@ -105,11 +104,11 @@ struct AddPlaceForm: View {
     @State private var busy = false
 
     var body: some View {
-        NavigationStack {
+        CompatNavigation {
             Form {
                 Text(String(format: "At %.5f, %.5f", at.latitude, at.longitude)).font(.footnote).foregroundStyle(Brand.muted)
                 TextField("Building name (optional)", text: $building)
-                TextField("Address", text: $address, axis: .vertical)
+                MultilineField(placeholder: "Address", text: $address, maxLines: 4)
                 TextField("Flat (e.g. A-204)", text: $flatLabel)
             }
             .navigationTitle("Add a place").navigationBarTitleDisplayMode(.inline)
@@ -146,8 +145,8 @@ struct TextPrompt: View {
     @State private var busy = false
 
     var body: some View {
-        NavigationStack {
-            Form { TextField(label, text: $value, axis: .vertical) }
+        CompatNavigation {
+            Form { MultilineField(placeholder: label, text: $value, maxLines: 6) }
                 .navigationTitle(title).navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
@@ -164,6 +163,6 @@ struct TextPrompt: View {
                     }
                 }
         }
-        .presentationDetents([.medium])
+        .sheetSizes([.medium])
     }
 }

@@ -16,6 +16,12 @@ same features as the web app in `fronend/webUI`:
   - change your name, sign out, deactivate your account
 - **Legal:** Privacy Policy and Delete your data open the site's pages.
 
+**Supported versions:** Android 6.0+ (minSdk 23, the oldest Compose and AndroidX
+support; `java.time` is desugared for 6.0–7.1) and iOS 15+ (iPhone 6s and newer). The
+iOS app avoids iOS 16/17-only SwiftUI: state is an `ObservableObject`, and
+`UI/Compat.swift` falls back to NavigationView, full-height sheets and TextEditor on
+iOS 15. Raising either minimum needs nothing beyond the version setting.
+
 Both apps use the same `/api/v1` backend as the web app and the same map
 setting: `GET /map/config` chooses Ola Maps or OpenStreetMap. MapLibre's native
 SDK draws the map. Rating pins and bubbles are drawn as native views on top of

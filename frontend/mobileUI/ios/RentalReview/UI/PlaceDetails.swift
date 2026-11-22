@@ -3,15 +3,14 @@ import SwiftUI
 /// A selected place: its flats, then the chosen flat's Tenant Reviews and
 /// Interactions tabs, with sharing and editing for signed-in visitors.
 struct PlaceDetails: View {
-    @Environment(AppModel.self) private var model
+    @EnvironmentObject private var model: AppModel
     @State private var form: FeedbackTab?
     @State private var editing: Review?
     @State private var addingFlat = false
 
     var body: some View {
-        @Bindable var model = model
         if let place = model.selected {
-            NavigationStack {
+            CompatNavigation {
                 List {
                     Section {
                         VStack(alignment: .leading) {

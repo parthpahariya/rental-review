@@ -3,7 +3,7 @@ import SwiftUI
 /// The search box, as on the web: suggestions after 4 letters and a short
 /// pause, statuses and errors inside the list, and the provider's credit.
 struct SearchBox: View {
-    @Environment(AppModel.self) private var model
+    @EnvironmentObject private var model: AppModel
     let near: GeoPoint?
     @State private var text = ""
     @State private var results: SearchService.Result?
@@ -66,7 +66,7 @@ struct SearchBox: View {
             error = nil
             guard term.count >= SearchService.minSearch else { busy = false; return }
             busy = true
-            try? await Task.sleep(for: .milliseconds(400))
+            try? await pause(milliseconds: 400)
             guard !Task.isCancelled else { return }
             do {
                 results = try await model.search.search(term, near: near)

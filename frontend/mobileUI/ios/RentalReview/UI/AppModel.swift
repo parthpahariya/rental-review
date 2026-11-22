@@ -1,5 +1,5 @@
 import Foundation
-import Observation
+import Combine
 
 enum Screen { case home, explore, notebook }
 enum FeedbackTab: Int { case tenant, interaction }
@@ -18,49 +18,48 @@ struct Notebook {
 
 /// All app state and the actions screens trigger (the iOS twin of Android's AppViewModel).
 @MainActor
-@Observable
-final class AppModel {
+final class AppModel: ObservableObject {
     let api = RentalReviewAPI(sessions: SessionStore())
 
     // Account
-    var account: Account?
-    var signingIn = false
+    @Published var account: Account?
+    @Published var signingIn = false
     /// Set when a deactivated account must confirm reactivation.
-    var reactivationPending = false
+    @Published var reactivationPending = false
     private var pendingCredential: String?
 
     // Navigation and feedback
-    var screen = Screen.home
-    var message: String?
+    @Published var screen = Screen.home
+    @Published var message: String?
 
     // Map
-    var provider: MapProvider?
-    var mapUnavailable = false
-    var area: Area?
-    var focus: Focus?
+    @Published var provider: MapProvider?
+    @Published var mapUnavailable = false
+    @Published var area: Area?
+    @Published var focus: Focus?
     /// The searched building, marked on the map.
-    var searched: Area?
-    var locations: [Location] = []
-    var partial = false
-    var loadingPlaces = false
-    var mapCenter = Region.defaultCenter
+    @Published var searched: Area?
+    @Published var locations: [Location] = []
+    @Published var partial = false
+    @Published var loadingPlaces = false
+    @Published var mapCenter = Region.defaultCenter
     private var viewportTask: Task<Void, Never>?
     private var focusKey = 0
 
     // Selected place
-    var selected: Location?
-    var flats: [Flat] = []
-    var flat: Flat?
-    var tab = FeedbackTab.tenant
-    var reviews: [Review] = []
-    var interactions: [Interaction] = []
+    @Published var selected: Location?
+    @Published var flats: [Flat] = []
+    @Published var flat: Flat?
+    @Published var tab = FeedbackTab.tenant
+    @Published var reviews: [Review] = []
+    @Published var interactions: [Interaction] = []
     /// The viewer's own reviews of the selected flat, by id (for Edit).
-    var ownReviews: [String: Review] = [:]
-    var detailLoading = false
+    @Published var ownReviews: [String: Review] = [:]
+    @Published var detailLoading = false
 
     // Notebook
-    var notebook = Notebook()
-    var notebookLoading = false
+    @Published var notebook = Notebook()
+    @Published var notebookLoading = false
 
     var search: SearchService {
         SearchService(listed: { [api] in try await api.searchListed($0) },
@@ -114,7 +113,7 @@ final class AppModel {
         mapCenter = center
         viewportTask?.cancel()
         viewportTask = Task {
-            try? await Task.sleep(for: .milliseconds(250))
+            try? await pause(milliseconds: 250)
             if Task.isCancelled { return }
             loadingPlaces = true
             do {
