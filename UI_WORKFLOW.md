@@ -18,7 +18,7 @@ after you sign in.
 | Place details | Read about one building | Pick a flat; switch Tenant Reviews / Interactions; share; add a flat; edit what you added |
 | Add a place | Put a missing building on the map | Drag the draft pin; review nearby places; enter name, address, flat |
 | Add your flat | Add a flat to an existing building | Enter the flat number, then go straight to the review form |
-| Share a review / interaction | Record an experience | Rating, owner name, tenancy dates, text, optional proof or file |
+| Share a review / interaction | Record an experience | Rating, tenancy dates, text (no names, no uploads) |
 | Edit your place | Fix what you added | Rename, re-address, move the pin, relabel your flat |
 | Sign in | Get an account | Continue with Google (one tap); confirm reactivation if deactivated |
 | Rental notebook | Manage your own records | Name; places you added; your reviews and interactions; deletion requests; deactivate |
@@ -86,17 +86,16 @@ flowchart TD
 2. **Select a flat:** reviews belong to one flat, never mixed. The last-used or newly added flat is preselected.
 3. **Tabs:** **Tenant Reviews** (rating, tenancy dates, feedback) and **Interactions**
    (viewings and conversations with no tenancy). Each tab shows its count, and arrow keys switch tabs.
-4. **Feedback cards** show the owner name, rating, dates and text. Author identity, emails and
-   proof files are never shown.
+4. **Feedback cards** show the kind of review, rating, dates and text. No person is named;
+   author identity and emails are never shown.
 
 ### 3. Share an experience (signed in)
 
 1. **Share a review** / **Share an interaction** opens the form for the selected flat.
-2. **Tenant review:** rating 1–5, owner name, tenancy start and end (end after start, no
-   overlap with another tenant's period on this flat), feedback, and proof of tenancy
-   (optional or required depending on the current policy).
-3. **Interaction:** owner name, date, what happened, optional supporting file. One per
-   person per flat.
+2. **Tenant review:** rating 1–5, tenancy start and end (end after start, no overlap with
+   another tenant's period on this flat), and feedback. The prompt asks for facts about the
+   flat, not names or contact details.
+3. **Interaction:** date and what happened. One per person per flat.
 4. **After publishing:** toast "Thanks for sharing. Your experience is now public." and the
    list refreshes. Errors (such as an overlapping period) appear in the form, which keeps what you typed.
 
@@ -134,7 +133,7 @@ flowchart TD
 - **Places you added:** "You added this building" or "You added a flat here".
 - **Your tenant reviews** and **Your interactions:** each starts with "Building · Flat X" and
   address. **Tap it to open that place with the flat and tab selected.** Actions: Edit review (30 days),
-  Request deletion (an admin decides, and the review stays visible until approved), Manage supporting files.
+  Request deletion (an admin decides, and the review stays visible until approved).
 - **Deletion requests** with their status. Admins also see **Pending deletion requests**
   (Approve / Reject).
 - **Deactivate account:** explains that reviews stay public, then confirms.

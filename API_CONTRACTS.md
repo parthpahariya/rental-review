@@ -5,7 +5,7 @@ Proposed REST/JSON contracts based on [REQUIREMENTS.md](REQUIREMENTS.md) and [DA
 ## Shared conventions
 
 - Base path: `/api/v1`. All paths below are relative to it.
-- Use HTTPS. Requests and responses use `application/json`, except multipart file uploads and file downloads.
+- Use HTTPS. Requests and responses use `application/json`. Request bodies are limited to 1 MB (`413 REQUEST_TOO_LARGE`); nothing is uploaded.
 - JSON field names use `snake_case`. IDs are UUID strings; timestamps are RFC 3339 UTC strings, such as `2026-10-06T12:00:00Z`; dates are `YYYY-MM-DD`.
 - Required fields cannot be null. Optional request fields may be omitted; null is accepted only where explicitly stated. Reject unknown body fields with `422 VALIDATION_ERROR`, including attempts to set author IDs, roles, timestamps, or deletion state.
 - Nonblank strings must contain a non-whitespace character. Ratings must be integers from 1 through 5.
@@ -13,7 +13,7 @@ Proposed REST/JSON contracts based on [REQUIREMENTS.md](REQUIREMENTS.md) and [DA
 - List endpoints accept optional `limit` (integer, proposed default `20`, range `1–100`) and `cursor` (opaque string). An invalid cursor or one reused with different filters produces `400 INVALID_CURSOR`.
 - Reviews, interactions, and deletion requests sort by `(submitted_at DESC, id DESC)`; other collections sort by `id ASC`. Cursors preserve these orderings. An empty collection returns `200`, an empty array, and a null cursor. Pagination is not a frozen snapshot; visibility and authorization are checked on every page.
 - Responses include `X-Request-ID`. Authentication and private responses use `Cache-Control: no-store`. Public review and map responses must reflect approved deletions on subsequent retrieval; initially use `no-store` as well.
-- Creation returns `201` and a `Location` header when a retrievable resource is created; asynchronous file ingestion returns `202`. Specific authentication results are defined below.
+- Creation returns `201` and a `Location` header when a retrievable resource is created. Specific authentication results are defined below.
 - No general POST replay guarantee is assumed. Do not automatically retry review or interaction creation after an ambiguous network failure; reconcile through the author's record lists first. Authentication and decision endpoints have their own single-use/conflict rules.
 
 ### Authentication and authorization
@@ -25,7 +25,6 @@ Proposed transport: `Authorization: Bearer <opaque_session_token>`. Persist only
 | Public | No session required; the response never varies to reveal private author information |
 | Active user | Valid, unexpired, unrevoked session belonging to an active account |
 | Author | Active user who authored the target review or interaction |
-| Uploader | Active user who uploaded the target file |
 | Admin | Active user with server-assigned `admin` role |
 
 Protected endpoints return `401 UNAUTHENTICATED` for missing, expired, or revoked sessions. An otherwise valid session whose account is inactive returns `403 ACCOUNT_INACTIVE`; normal deactivation revokes sessions and therefore normally yields `401`. Insufficient permissions on a public resource return `403 FORBIDDEN`. Private resources return `404 NOT_FOUND` to callers outside their authorized scope. Admin routes return `403` to authenticated non-admin users before resource lookup.
@@ -54,10 +53,9 @@ Protected endpoints return `401 UNAUTHENTICATED` for missing, expired, or revoke
 | `403` | `FORBIDDEN`, `ACCOUNT_INACTIVE`, `EDIT_WINDOW_CLOSED` |
 | `404` | `NOT_FOUND`, `GOOGLE_SIGN_IN_DISABLED` |
 | `405` | `METHOD_NOT_ALLOWED` (include the route's `Allow` header) |
-| `409` | `INTERACTION_REVIEW_ALREADY_EXISTS`, `LOCATION_ALREADY_EXISTS`, `FLAT_ALREADY_EXISTS`, `EDIT_LOCKED`, `TENANCY_PERIOD_CONFLICT`, `FILE_NOT_READY`, `FILE_ALREADY_ATTACHED`, `FILE_UNAVAILABLE`, `REQUEST_ALREADY_PENDING`, `REQUEST_ALREADY_DECIDED` |
-| `413` | `FILE_TOO_LARGE` |
-| `415` | `UNSUPPORTED_MEDIA_TYPE` |
-| `422` | `VALIDATION_ERROR`, `PROOF_REQUIRED`, `FILE_PURPOSE_MISMATCH`, `CONFIRMATION_REQUIRED` |
+| `409` | `INTERACTION_REVIEW_ALREADY_EXISTS`, `LOCATION_ALREADY_EXISTS`, `FLAT_ALREADY_EXISTS`, `EDIT_LOCKED`, `TENANCY_PERIOD_CONFLICT`, `REQUEST_ALREADY_PENDING`, `REQUEST_ALREADY_DECIDED` |
+| `413` | `REQUEST_TOO_LARGE` |
+| `422` | `VALIDATION_ERROR`, `CONFIRMATION_REQUIRED` |
 | `429` | `GOOGLE_SIGN_IN_LIMITED`, `RATE_LIMITED` |
 | `503` | `GOOGLE_UNAVAILABLE`, `SERVICE_UNAVAILABLE` |
 
@@ -75,18 +73,15 @@ Fields below are exhaustive for each response shape. All fields are present unle
 | `ReviewSummary` | `tenant_review_count: integer`, `interaction_review_count: integer`, `average_rating: number\|null` |
 | `MapLocation` | All `Location` fields plus `summary: ReviewSummary` |
 | `Flat` | `id: UUID`, `label: string`, `location: Location`, `summary: ReviewSummary` |
-| `TenantReview` (public) | `id: UUID`, `flat_id: UUID`, `location_id: UUID`, `owner_name: string`, `tenancy_start_date: date`, `tenancy_end_date: date`, `rating: integer`, `feedback: string`, `submitted_at: timestamp`, `updated_at: timestamp`, `editing_deadline: timestamp` |
-| `InteractionReview` (public) | `id: UUID`, `flat_id: UUID`, `location_id: UUID`, `owner_name: string`, `description: string`, `interaction_date: date`, `submitted_at: timestamp` |
+| `TenantReview` (public) | `id: UUID`, `flat_id: UUID`, `location_id: UUID`, `tenancy_start_date: date`, `tenancy_end_date: date`, `rating: integer`, `feedback: string`, `submitted_at: timestamp`, `updated_at: timestamp`, `editing_deadline: timestamp` |
+| `InteractionReview` (public) | `id: UUID`, `flat_id: UUID`, `location_id: UUID`, `description: string`, `interaction_date: date`, `submitted_at: timestamp` |
 | `OwnTenantReview` (private) | All `TenantReview` fields plus `deleted_at: timestamp\|null`, `can_edit: boolean`, `can_request_deletion: boolean` |
-| `File` (private) | `id: UUID`, `purpose: tenancy_proof\|interaction_support`, `original_filename: string`, `media_type: string`, `size_bytes: integer`, `status: pending\|ready\|rejected\|deletion_pending\|deleted`, `created_at: timestamp`, `updated_at: timestamp` |
-| `InteractionAttachment` (private) | `id: UUID`, `interaction_review_id: UUID`, `file: File`, `created_at: timestamp` |
-| `TenancyProof` (private) | `id: UUID`, `tenant_review_id: UUID`, `file: File`, `created_at: timestamp` |
 | `DeletionRequest` (private) | `id: UUID`, `tenant_review_id: UUID`, `requested_by: UUID`, `reason: string`, `status: pending\|approved\|rejected`, `submitted_at: timestamp`, `decided_at: timestamp\|null`, `decision_note: string\|null` |
 | `AdminDeletionRequest` (private) | All `DeletionRequest` fields plus `decided_by: UUID\|null`, `review: TenantReview`, `review_deleted_at: timestamp\|null`; review snapshot is the current stored review, retained after deletion |
 
-`owner_name` is the nonblank name supplied by the author and stored on that review. Both submission forms require it, and both public review types display it. Flats have no owner field or owner association. Names do not identify a shared owner resource or link reviews across flats.
+Reviews and interactions name no person: there is no owner field anywhere, and a request that sends `owner_name` is rejected like any unknown field. Reviews describe a tenancy in a flat, not an individual.
 
-Public shapes exclude author account IDs, emails, account status, proof metadata, file metadata/URLs, and deletion-request details. Supporting-file downloads remain author-only until their visibility policy is decided. `average_rating` uses only visible tenant reviews, rounded to two decimal places; it is null when the tenant review count is zero. Counts never depend on author account status.
+Public shapes exclude author account IDs, emails, account status, and deletion-request details. `average_rating` uses only visible tenant reviews, rounded to two decimal places; it is null when the tenant review count is zero. Counts never depend on author account status.
 
 ## Google sign-in
 
@@ -145,15 +140,13 @@ The UI must explain these effects before requesting confirmation.
 
 Request: `{ "confirm": true }`. `200`: `{ "data": { "status": "inactive", "deactivated_at": timestamp } }`.
 
-Atomically mark the account inactive and revoke every session. No review, interaction, rating, or attachment is hidden by this operation. Missing or false confirmation returns `422 CONFIRMATION_REQUIRED`. Subsequent use of old sessions returns `401`.
+Atomically mark the account inactive and revoke every session. No review, interaction, or rating is hidden by this operation. Missing or false confirmation returns `422 CONFIRMATION_REQUIRED`. Subsequent use of old sessions returns `401`.
 
 ## Public configuration and property discovery
 
 ### `GET /review-submission-policy` — Public
 
-`200`: `{ "data": { "proof_policy_id": UUID, "proof_required": boolean, "effective_from": timestamp, "editing_window_days": 30 } }`.
-
-The initial policy has `proof_required: false`. The server selects the policy effective at submission; the client cannot pin an older policy. A stale form may therefore receive `422 PROOF_REQUIRED` and should refresh this endpoint. Policy administration is deployment configuration, not a public mutation endpoint.
+`200`: `{ "data": { "editing_window_days": 30 } }`. Reviews can be edited for this many days after submission. Nothing else is required to post: there is no proof of tenancy and no upload.
 
 ### Discovery endpoints — Public
 
@@ -200,7 +193,7 @@ Request: `{ "label": nonblank_string (≤100) }`.
 
 ### `GET /flats/{flat_id}/tenant-reviews` — Public
 
-Paginated list of visible `TenantReview` records for the selected flat. Each record includes its supplied `owner_name` and specific flat/location IDs. No owner-ID filter or owner-scoped review endpoint is provided.
+Paginated list of visible `TenantReview` records for the selected flat, with their flat/location IDs.
 
 ### `GET /tenant-reviews/{review_id}` — Public
 
@@ -212,28 +205,26 @@ Request:
 
 ```json
 {
-  "owner_name": "Priya Sharma",
   "tenancy_start_date": "2025-01-01",
   "tenancy_end_date": "2026-01-01",
   "rating": 4,
-  "feedback": "Maintenance requests were handled promptly.",
-  "proof_file_ids": []
+  "feedback": "Maintenance requests were handled promptly."
 }
 ```
 
-`owner_name`, `tenancy_start_date`, `tenancy_end_date`, `rating`, and nonblank `feedback` are required. `owner_name` must be a nonblank string; missing, null, non-string, or whitespace-only names return `422 VALIDATION_ERROR`. Store the supplied name on the review and derive `flat_id` from the path; an unknown flat returns `404 NOT_FOUND`. `proof_file_ids` is optional and defaults to an empty array of unique UUIDs.
+`tenancy_start_date`, `tenancy_end_date`, `rating`, and nonblank `feedback` are required. Derive `flat_id` from the path; an unknown flat returns `404 NOT_FOUND`.
 
 The tenancy period includes `tenancy_start_date` and excludes `tenancy_end_date`; the end must be later than the start. Equal or reversed dates return `422 VALIDATION_ERROR`. Adjacent periods are allowed: a review ending `2026-01-01` does not conflict with one starting `2026-01-01`. A conflict exists when `new_start < existing_end AND existing_start < new_end`. Both dates are returned with and displayed on the public review.
 
 `201`: `{ "data": TenantReview }`; `Location: /api/v1/tenant-reviews/{review_id}`.
 
-Derive the author from the session. Validate both tenancy dates as required `YYYY-MM-DD` calendar dates; missing, null, malformed, or invalid periods return `422 VALIDATION_ERROR`. Atomically reject overlaps with another author's non-deleted tenant reviews for the same flat using `409 TENANCY_PERIOD_CONFLICT`, even when owner names differ. Include a clear message and field errors for the tenancy dates, without returning the other author's account details. Inactive authors and pending/rejected deletion requests still block conflicts; admin-approved deleted reviews do not. Same-author reviews, different flats, and interaction reviews are outside this restriction. Serialize the conflict check and insert per flat as defined in the database model; concurrent conflicting submissions by different authors must not both succeed. A conflict creates neither a review nor proof associations. Publish immediately after successful submission. Select and persist the effective proof policy, validate ready proof files owned by the author, and create the review and proof links in one transaction. A mandatory policy requires at least one valid proof; otherwise return `422 PROOF_REQUIRED` with no review created. Other errors: `404 NOT_FOUND` for unavailable private file IDs, `409 FILE_NOT_READY`, `409 FILE_ALREADY_ATTACHED`, `422 FILE_PURPOSE_MISMATCH`. Do not impose a one-review-per-author limit.
+Derive the author from the session. Validate both tenancy dates as required `YYYY-MM-DD` calendar dates; missing, null, malformed, or invalid periods return `422 VALIDATION_ERROR`. Atomically reject overlaps with another author's non-deleted tenant reviews for the same flat using `409 TENANCY_PERIOD_CONFLICT`. Include a clear message and field errors for the tenancy dates, without returning the other author's account details. Inactive authors and pending/rejected deletion requests still block conflicts; admin-approved deleted reviews do not. Same-author reviews, different flats, and interaction reviews are outside this restriction. Serialize the conflict check and insert per flat as defined in the database model; concurrent conflicting submissions by different authors must not both succeed. A conflict creates no review. Publish immediately after successful submission. Do not impose a one-review-per-author limit.
 
 ### `PATCH /tenant-reviews/{review_id}` — Author
 
 Request: one or both of `{ "rating": integer, "feedback": nonblank_string }`; an empty object is invalid.
 
-`200`: `{ "data": TenantReview }`. Only these two fields may change; `owner_name`, `flat_id`, `tenancy_start_date`, and `tenancy_end_date` remain fixed at submission. Preserve the original submission instant and derive `editing_deadline = submitted_at + 30 elapsed days`. The server must check `now < editing_deadline` within the write; exactly at the deadline editing is closed. Errors: `403 FORBIDDEN` for another author, `403 EDIT_WINDOW_CLOSED`, `404 NOT_FOUND` for deleted/unknown reviews. Reactivation or earlier edits do not extend the deadline.
+`200`: `{ "data": TenantReview }`. Only these two fields may change; `flat_id`, `tenancy_start_date`, and `tenancy_end_date` remain fixed at submission. Preserve the original submission instant and derive `editing_deadline = submitted_at + 30 elapsed days`. The server must check `now < editing_deadline` within the write; exactly at the deadline editing is closed. Errors: `403 FORBIDDEN` for another author, `403 EDIT_WINDOW_CLOSED`, `404 NOT_FOUND` for deleted/unknown reviews. Reactivation or earlier edits do not extend the deadline.
 
 ### Private author retrieval
 
@@ -241,13 +232,12 @@ Request: one or both of `{ "rating": integer, "feedback": nonblank_string }`; an
 | --- | --- |
 | `GET /me/tenant-reviews` | Paginated list of `OwnTenantReview`; includes the author's logically deleted reviews for history |
 | `GET /me/tenant-reviews/{review_id}` | Single `OwnTenantReview`; another author's review returns `404` |
-| `GET /me/tenant-reviews/{review_id}/proofs` | Paginated list of `TenancyProof`; another author's review returns `404` |
 
-All require an active user. `can_edit` is true only for a visible review before its deadline. `can_request_deletion` is true only for a visible review without a pending request. These flags assist the UI; the server still checks conditions during each mutation. Proof attachment changes after submission are not defined by the current requirements.
+All require an active user. `can_edit` is true only for a visible review before its deadline. `can_request_deletion` is true only for a visible review without a pending request. These flags assist the UI; the server still checks conditions during each mutation.
 
 `DELETE /tenant-reviews/{review_id}` returns `405 METHOD_NOT_ALLOWED` with `Allow: GET, PATCH`. Authors must use the deletion-request process below; admins also approve requests through that process rather than directly deleting reviews.
 
-## Interaction reviews and supporting attachments
+## Interaction reviews
 
 ### Public retrieval
 
@@ -256,7 +246,7 @@ All require an active user. `can_edit` is true only for a visible review before 
 | `GET /flats/{flat_id}/interactions` | None | List of `InteractionReview` |
 | `GET /interactions/{interaction_id}` | None | Single `InteractionReview` |
 
-Unknown parent or detail resources return `404`; an existing flat with no interactions returns an empty list. Public access is independent of the author's account status and requires no tenant review. Attachment metadata is excluded from public interaction responses pending a supporting-file visibility decision.
+Unknown parent or detail resources return `404`; an existing flat with no interactions returns an empty list. Public access is independent of the author's account status and requires no tenant review.
 
 ### `POST /flats/{flat_id}/interactions` — Active user
 
@@ -264,18 +254,16 @@ Request:
 
 ```json
 {
-  "owner_name": "Priya Sharma",
   "description": "Viewed the flat and discussed the deposit.",
-  "interaction_date": "2026-10-05",
-  "supporting_file_ids": []
+  "interaction_date": "2026-10-05"
 }
 ```
 
-`owner_name`, nonblank description, and valid calendar date are required. `owner_name` must be a nonblank string; missing, null, non-string, or whitespace-only names return `422 VALIDATION_ERROR`. Store the supplied name on the interaction review and derive `flat_id` from the path; an unknown flat returns `404 NOT_FOUND`. `supporting_file_ids` is optional, defaulting to an empty array of unique UUIDs. Validate that any files are ready, unassociated, author-owned `interaction_support` files. No future-date prohibition is assumed by the requirements.
+A nonblank description and a valid calendar date are required. Derive `flat_id` from the path; an unknown flat returns `404 NOT_FOUND`. No future-date prohibition is assumed by the requirements.
 
-Derive the author from the session. Each user may create at most one interaction review per flat, regardless of owner name or interaction date. A second submission returns `409 INTERACTION_REVIEW_ALREADY_EXISTS` with a clear message. Enforce unique `(author_id, flat_id)` in the database and translate that constraint violation to this response so concurrent submissions cannot both succeed. A duplicate submission creates no review or attachment links and leaves the existing review unchanged. The same user may review other flats; different users may each review this flat. Deactivation/reactivation and supporting-file changes do not reset the limit. After an ambiguous creation response, clients can reconcile through `GET /me/interactions` and locate the record with the selected `flat_id`.
+Derive the author from the session. Each user may create at most one interaction review per flat, regardless of interaction date. A second submission returns `409 INTERACTION_REVIEW_ALREADY_EXISTS` with a clear message. Enforce unique `(author_id, flat_id)` in the database and translate that constraint violation to this response so concurrent submissions cannot both succeed. A duplicate submission creates no review and leaves the existing review unchanged. The same user may review other flats; different users may each review this flat. Deactivation/reactivation does not reset the limit. After an ambiguous creation response, clients can reconcile through `GET /me/interactions` and locate the record with the selected `flat_id`.
 
-`201`: `{ "data": InteractionReview }`; `Location: /api/v1/interactions/{interaction_id}`. Publish immediately and create requested attachment links in the same transaction. Do not require tenancy proof, a rating, or a tenant review. Invalid attachments fail the entire submission. Errors match tenant-review file validation above, without `PROOF_REQUIRED`.
+`201`: `{ "data": InteractionReview }`; `Location: /api/v1/interactions/{interaction_id}`. Publish immediately. Do not require a rating or a tenant review.
 
 ### Private interaction retrieval — Active user
 
@@ -284,51 +272,7 @@ Derive the author from the session. Each user may create at most one interaction
 | `GET /me/interactions` | Paginated list of the caller's `InteractionReview` records |
 | `GET /me/interactions/{interaction_id}` | Single caller-owned `InteractionReview`; other authors' IDs return `404` |
 
-### `GET /interactions/{interaction_id}/attachments` — Author
-
-`200`: paginated list of `InteractionAttachment` with removed attachments excluded. Other users receive `404` for this private collection.
-
-### `POST /interactions/{interaction_id}/attachments` — Author
-
-Request: `{ "file_id": UUID }`. `201`: `{ "data": InteractionAttachment }`; `Location: /api/v1/interactions/{interaction_id}/attachments/{attachment_id}`.
-
-The file must be a ready, unassociated, author-owned `interaction_support` file. Adding files is allowed at posting time or anytime afterward; there is no 30-day deadline for supporting attachments. Errors: `403 FORBIDDEN` for a different interaction author, `404 NOT_FOUND` for a file outside the caller's scope, `409 FILE_NOT_READY`, `409 FILE_ALREADY_ATTACHED`, `422 FILE_PURPOSE_MISMATCH`.
-
-### `GET /interactions/{interaction_id}/attachments/{attachment_id}` — Author
-
-`200`: `{ "data": InteractionAttachment }`. Unknown, removed, mismatched, or unauthorized attachment IDs return `404`.
-
-### `DELETE /interactions/{interaction_id}/attachments/{attachment_id}` — Author
-
-No body. Return `204` after logically removing the attachment and scheduling object deletion. The interaction remains unchanged. Repeating removal of the same attachment by its author returns `204`; unknown, mismatched, or unauthorized IDs return `404`. Removed file content becomes immediately unavailable through the API, even if physical deletion is pending.
-
 `PATCH` and `DELETE /interactions/{interaction_id}` return `405 METHOD_NOT_ALLOWED` with `Allow: GET`. Editing/deleting interaction text and linking interactions to tenant reviews remain unresolved product decisions.
-
-## Private file lifecycle
-
-### `GET /file-upload-policy` — Active user
-
-`200`: `{ "data": { "purposes": [ { "purpose": "tenancy_proof", "allowed_media_types": [string], "max_size_bytes": integer }, { "purpose": "interaction_support", "allowed_media_types": [string], "max_size_bytes": integer } ] } }`.
-
-Returns deployment-selected types and limits; no numeric limits or allowed types are fixed by the current requirements. Server enforcement is authoritative if policy changes after fetching.
-
-### `POST /files` — Active user
-
-Content type: `multipart/form-data`. Required parts: `purpose` (`tenancy_proof` or `interaction_support`) and `file` (one binary file with its filename and media type). Reject additional parts and multiple files in one request.
-
-`202`: `{ "data": File }` with status `pending`; `Location: /api/v1/files/{file_id}`. Upload ingestion and file validation complete before a file becomes `ready`; clients poll the file endpoint. The original filename and claimed media type are untrusted input. Errors: `413 FILE_TOO_LARGE`, `415 UNSUPPORTED_MEDIA_TYPE`, `422 VALIDATION_ERROR`, `503 SERVICE_UNAVAILABLE`.
-
-An upload is not itself a proof or interaction attachment. Associate its ID only after status becomes `ready`. Rejecting or failing an upload never publishes a review. Expired unattached uploads are cleaned up by configured retention policy.
-
-### `GET /files/{file_id}` — Uploader
-
-`200`: `{ "data": File }`. Status transitions are `pending → ready|rejected` and, when cleanup/removal applies, `pending|ready|rejected → deletion_pending → deleted`. Terminal/rejected files cannot be attached. Unknown files or another uploader's files return `404`.
-
-### `GET /files/{file_id}/content` — Uploader
-
-Return `200` with binary content, validated `Content-Type`, sanitized `Content-Disposition: attachment`, and `Cache-Control: no-store`. The API streams bytes after checking current access; it does not return a permanent URL or storage key. Only ready, accessible files can be downloaded. Pending/rejected files return `409 FILE_NOT_READY`; removed or deleted files return `404`, including while object cleanup is pending.
-
-Proof content stays private. No general file-delete endpoint is provided: supporting files are removed through their interaction attachment, and unused uploads are cleaned up automatically. Administrative access to proof files is outside the present requirements.
 
 ## Review deletion requests and admin decisions
 
@@ -356,7 +300,7 @@ Requests remain retrievable after approval and after account reactivation. Inact
 | `GET /admin/deletion-requests` | `status=pending|approved|rejected|all`, default `pending`, plus pagination | List of `AdminDeletionRequest` |
 | `GET /admin/deletion-requests/{request_id}` | None | Single `AdminDeletionRequest` |
 
-The admin response includes the review needed to assess the request without exposing the author's email or proof files. Existing pending requests can be decided even if their author has since deactivated.
+The admin response includes the review needed to assess the request without exposing the author's email. Existing pending requests can be decided even if their author has since deactivated.
 
 ### `POST /admin/deletion-requests/{request_id}/decision` — Admin
 
@@ -382,33 +326,28 @@ These scenarios define acceptance expectations for a future implementation; they
 | Token for another app, wrong issuer, expired, badly signed, or with unverified email | `401`; no account or session created |
 | Inactive Google account signs in | `reactivation_required`; no session until the user confirms with `reactivate: true` |
 | Account deactivated with multiple sessions | All sessions revoked; public reviews and interactions unchanged |
-| Optional/mandatory proof | Empty proof array succeeds under optional policy and fails atomically under mandatory policy |
 | Review edited at exactly 30 days | `403 EDIT_WINDOW_CLOSED`; earlier edits/reactivation never shift deadline |
 | Wrong author attempts mutation | Forbidden or private-resource `404`; no record or file changed |
 | Location has only interactions | Included in map and text results |
-| Several flats share a location | Each review retains its flat ID and supplied owner name; tabs do not mix flats |
-| Reviews for one flat name different owners | Each review displays its own submitted name; different owner names do not bypass tenancy-period conflicts |
-| Different tenants submit identical, partially overlapping, or contained periods for one flat | `409 TENANCY_PERIOD_CONFLICT`; no new review or proof associations |
+| Several flats share a location | Each review retains its flat ID; tabs do not mix flats |
+| Different tenants submit identical, partially overlapping, or contained periods for one flat | `409 TENANCY_PERIOD_CONFLICT`; no new review |
 | Adjacent periods for different tenants, where one ends on the other's start date | Accepted when other validation passes |
-| Equal or reversed tenancy start/end dates | `422 VALIDATION_ERROR`; no review or proof associations |
+| Equal or reversed tenancy start/end dates | `422 VALIDATION_ERROR`; no review created |
 | Concurrent conflicting submissions by different tenants for an empty flat | At most one succeeds; the other receives `409 TENANCY_PERIOD_CONFLICT` |
 | Overlapping periods from the same author or for different flats | Accepted when other validation passes |
 | Existing conflicting review has an inactive author or pending/rejected deletion request | Conflict still rejected |
 | Existing conflicting review has approved deletion | That review no longer blocks the period; other non-deleted reviews still do |
-| Missing, null, malformed, or invalid tenancy dates | `422 VALIDATION_ERROR`; no review or proof associations |
+| Missing, null, malformed, or invalid tenancy dates | `422 VALIDATION_ERROR`; no review created |
 | Tenant attempts to edit tenancy dates | `422 VALIDATION_ERROR`; only rating and feedback may change |
 | Interaction occurs during a reviewed tenancy period | No tenancy dates required; the one-interaction-review-per-user-per-flat limit still applies |
-| Same user posts a second interaction review for the same flat, even with a different owner name or date | `409 INTERACTION_REVIEW_ALREADY_EXISTS`; existing review unchanged and no new review or attachment links |
+| Same user posts a second interaction review for the same flat, even with a different date | `409 INTERACTION_REVIEW_ALREADY_EXISTS`; existing review unchanged and no new review |
 | Concurrent interaction submissions by the same user for the same flat | At most one succeeds; the duplicate returns `409 INTERACTION_REVIEW_ALREADY_EXISTS` |
 | Same user posts interactions for different flats, or different users post for the same flat | Accepted when other validation passes |
-| User reactivates or changes supporting files, then submits another interaction for the same flat | `409 INTERACTION_REVIEW_ALREADY_EXISTS`; the limit persists |
-| Reviews on different flats use the same owner name | Records remain independent; matching names create no shared owner identity |
-| Either review submission omits an owner name or supplies null, a non-string, or only whitespace | `422 VALIDATION_ERROR`; no review or attachments created |
-| First review for a flat | Accept a supplied owner name without provisioning an owner record or association |
-| Supporting attachment removed | File unavailable immediately; interaction text remains public |
+| User reactivates, then submits another interaction for the same flat | `409 INTERACTION_REVIEW_ALREADY_EXISTS`; the limit persists |
 | Deletion request pending/rejected | Review and rating stay public |
 | Deletion approved | Review/rating removed from public detail, lists, map counts, and aggregates atomically |
-| Anonymous public reads | Never return emails, proofs, author account data, or private attachment metadata |
+| Any submission includes `owner_name`, `proof_file_ids` or `supporting_file_ids` | `422 VALIDATION_ERROR`; reviews name no person and nothing is uploaded |
+| Anonymous public reads | Never return emails or author account data |
 
 ## Coverage and deferred decisions
 
@@ -416,10 +355,10 @@ These scenarios define acceptance expectations for a future implementation; they
 | --- | --- |
 | FR-01 | Google sign-in, account creation, sessions |
 | FR-02 | Deactivation preview/action, Google reactivation, preserved public visibility |
-| FR-04 | Tenant review submission/retrieval/editing, tenancy-period conflict validation, proof policy and private files |
+| FR-04 | Tenant review submission/retrieval/editing, tenancy-period conflict validation |
 | FR-05 | Location viewport/text search, location/flat navigation, both feedback collections |
-| FR-06 | Public interactions with one review per user per flat, private uploads and author attachment management |
+| FR-06 | Public interactions with one review per user per flat |
 | FR-07 | Separate flat-scoped tenant-review and interaction endpoints |
 | FR-08 | Author deletion requests/status and admin queue/decisions |
 
-Before implementation, resolve extra registration fields; location/flat provisioning and deduplication; interaction editing/deletion/linking; arbitrary-point nearby search and radius; map provider/coverage; file limits and supporting-file visibility; data retention; and final browser session transport. Generic pagination defaults, transport, substring search, and error conventions above are proposed API choices, not previously approved product decisions. No public property-creation workflow, proof-review workflow, or interaction-deletion approval process is implied.
+Before implementation, resolve extra registration fields; location/flat provisioning and deduplication; interaction editing/deletion/linking; arbitrary-point nearby search and radius; map provider/coverage; data retention; and final browser session transport. Generic pagination defaults, transport, substring search, and error conventions above are proposed API choices, not previously approved product decisions. No public property-creation workflow, proof-review workflow, or interaction-deletion approval process is implied.

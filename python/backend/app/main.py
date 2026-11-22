@@ -11,7 +11,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from starlette.exceptions import HTTPException
 
-from . import auth, files, google, maps, properties, reviews
+from . import auth, google, maps, properties, reviews
 from .common import ApiError
 from .config import get_settings
 from .database import engine
@@ -87,14 +87,18 @@ async def request_headers(request: Request, call_next):
     return response
 
 
+# The API takes only small JSON bodies; nothing is uploaded.
+MAX_REQUEST_BYTES = 1024 * 1024
+
+
 async def handle(request: Request, call_next):
     try:
         length = int(request.headers.get("content-length", "0"))
     except ValueError:
         return error_response(request, 400, "MALFORMED_REQUEST", "Invalid Content-Length.")
-    if length > settings.max_upload_bytes + 1048576:
+    if length > MAX_REQUEST_BYTES:
         response = error_response(
-            request, 413, "FILE_TOO_LARGE", "Request exceeds the upload limit."
+            request, 413, "REQUEST_TOO_LARGE", "Request exceeds the size limit."
         )
     else:
         try:
@@ -186,6 +190,5 @@ for router in [
     maps.router,
     properties.router,
     reviews.router,
-    files.router,
 ]:
     app.include_router(router, prefix="/api/v1")

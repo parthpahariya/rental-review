@@ -34,6 +34,7 @@ import type {
 } from "./api";
 import { formatCount, plural } from "./format";
 import { readUrlState, writeUrlState } from "./urlState";
+import { PATHS } from "./legal/site";
 
 export default function App() {
   // Only the places inside the visible map area: the full catalogue is far
@@ -636,9 +637,13 @@ export default function App() {
               rental<b>review</b>
             </span>
             <span>Good neighbours start with shared experiences.</span>
-            <a href="/api/docs" target="_blank" rel="noreferrer">
-              API documentation
-            </a>
+            <nav className="footer-links" aria-label="About this site">
+              <a href={PATHS.privacy}>Privacy Policy</a>
+              <a href={PATHS.deleteData}>Delete your data</a>
+              <a href="/api/docs" target="_blank" rel="noreferrer">
+                API documentation
+              </a>
+            </nav>
           </footer>
         </main>
       ) : (
@@ -1178,7 +1183,7 @@ export default function App() {
               <strong>Add your own perspective.</strong>
               <p>
                 Sign in with Google to share. Reviews are public, while your
-                email and supporting documents stay private.
+                name and email stay private.
               </p>
             </li>
           </ol>

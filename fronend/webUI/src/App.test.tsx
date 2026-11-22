@@ -119,7 +119,6 @@ const flat = {
 const review = {
   id: "review-1",
   flat_id: flat.id,
-  owner_name: "Anita Rao",
   rating: 5,
   feedback: "A helpful owner.",
   tenancy_start_date: "2024-01-01",
@@ -130,7 +129,6 @@ const review = {
 const interaction = {
   id: "interaction-1",
   flat_id: flat.id,
-  owner_name: "A different owner",
   description: "A transparent viewing.",
   interaction_date: "2025-02-01",
   submitted_at: "2025-02-02T00:00:00Z",
@@ -207,7 +205,10 @@ describe("Rental Review", () => {
       "true",
     );
     expect(screen.getByText("A transparent viewing.")).toBeInTheDocument();
-    expect(screen.getByText("A different owner")).toBeInTheDocument();
+    // Reviews name no one: cards say what kind of review they are.
+    expect(
+      screen.getByText("Interaction", { selector: ".review-who strong" }),
+    ).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: /Select a flat/ })).toHaveValue(
       "flat-1",
     );
@@ -639,8 +640,6 @@ describe("Rental Review", () => {
           return Promise.resolve(result([newFlat]));
         if (input.includes("/flats/flat-2/"))
           return Promise.resolve(result([]));
-        if (input.includes("/review-submission-policy"))
-          return Promise.resolve(result({ proof_required: false }, false));
         return base(input);
       }),
     );
@@ -1057,6 +1056,17 @@ describe("Rental Review", () => {
     expect(cards()).toHaveLength(20);
     await user.selectOptions(screen.getByLabelText("Sort by"), "reviews");
     expect(cards()[0]).toHaveAccessibleName(/Tower 3\b/);
+  });
+
+  it("links the Privacy Policy and data deletion pages from the home page", () => {
+    render(<App />);
+    const footer = screen.getByRole("navigation", { name: "About this site" });
+    expect(
+      within(footer).getByRole("link", { name: "Privacy Policy" }),
+    ).toHaveAttribute("href", "/privacy");
+    expect(
+      within(footer).getByRole("link", { name: "Delete your data" }),
+    ).toHaveAttribute("href", "/delete-data");
   });
 
   it("shows How it works only on the home page and a profile icon when signed in", async () => {

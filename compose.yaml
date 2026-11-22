@@ -21,7 +21,6 @@ services:
             - "**/__pycache__/"
             - .pytest_cache/
             - .ruff_cache/
-            - uploads/
             - "*.pyc"
     # The database is the shared PostgreSQL from ../postgres-platform (run `make db`).
     # DATABASE_URL (writer, used by the API) and MIGRATION_DATABASE_URL (owner, used
@@ -37,9 +36,6 @@ services:
       OLA_MAPS_API_KEY: ${OLA_MAPS_API_KEY:-}
       CORS_ORIGINS: http://localhost:${WEB_PORT:-8080},http://localhost:5173
       SEED_DEMO_DATA: ${SEED_DEMO_DATA:-true}
-      UPLOAD_DIR: /app/uploads
-    volumes:
-      - uploads:/app/uploads
     ports:
       - "127.0.0.1:${API_PORT:-8000}:8000"
     healthcheck:
@@ -103,9 +99,6 @@ services:
     restart: unless-stopped
     networks: [edge]
     logging: *logging
-
-volumes:
-  uploads:
 
 networks:
   # Created by postgres-platform; the shared container is reachable as shared-postgres.

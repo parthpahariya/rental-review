@@ -1,5 +1,4 @@
 from functools import lru_cache
-from pathlib import Path
 from typing import Literal
 
 from pydantic import model_validator
@@ -18,8 +17,6 @@ class Settings(BaseSettings):
     # Google sign-in attempts allowed per client IP per hour.
     google_sign_in_ip_limit: int = 100
     session_days: int = 7
-    upload_dir: Path = Path("uploads")
-    max_upload_bytes: int = 5 * 1024 * 1024
     # OAuth web client id(s) from Google Cloud Console, comma-separated. Google is
     # the only way to sign in, so with this empty nobody can sign in.
     google_client_ids: str = ""

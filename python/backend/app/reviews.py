@@ -11,8 +11,6 @@ from .common import (
     current_user,
     deletion_data,
     fail,
-    fields,
-    file_data,
     get_or_404,
     interaction_data,
     own_review_data,
@@ -21,21 +19,9 @@ from .common import (
     review_data,
 )
 from .database import get_db
-from .files import attachment_files
-from .models import (
-    Attachment,
-    DeletionRequest,
-    File,
-    Flat,
-    Interaction,
-    Proof,
-    TenantReview,
-    User,
-    now,
-)
-from .properties import Limit, effective_policy
+from .models import DeletionRequest, Flat, Interaction, TenantReview, User, now
+from .properties import Limit
 from .schemas import (
-    AttachmentBody,
     DecisionBody,
     DeletionBody,
     EditBody,
@@ -114,20 +100,9 @@ def create_review(
             "TENANCY_PERIOD_CONFLICT",
             "Another tenant has already reviewed an overlapping tenancy for this flat.",
         )
-    policy = effective_policy(db)
-    if policy.proof_required and not body.proof_file_ids:
-        fail(422, "PROOF_REQUIRED", "Proof of tenancy is currently required.")
-    files = attachment_files(db, body.proof_file_ids, user, "tenancy_proof")
-    row = TenantReview(
-        author_id=user.id,
-        flat_id=flat_id,
-        proof_policy_id=policy.id,
-        **body.model_dump(exclude={"proof_file_ids"}),
-    )
+    row = TenantReview(author_id=user.id, flat_id=flat_id, **body.model_dump())
     db.add(row)
     db.flush()
-    for file in files:
-        db.add(Proof(tenant_review_id=row.id, file_id=file.id))
     response.headers["Location"] = f"/api/v1/tenant-reviews/{row.id}"
     return {"data": review_data(db, row)}
 
@@ -181,28 +156,6 @@ def own_review(review_id: UUID, user: User = Depends(current_user), db: Session 
     return {"data": own_review_data(db, row)}
 
 
-@router.get("/me/tenant-reviews/{review_id}/proofs")
-def own_proofs(
-    review_id: UUID,
-    limit: Limit = 20,
-    cursor: str | None = None,
-    user: User = Depends(current_user),
-    db: Session = Depends(get_db),
-):
-    require_author(get_or_404(db, TenantReview, review_id), user, True)
-    return page(
-        db,
-        select(Proof).where(Proof.tenant_review_id == review_id),
-        Proof,
-        lambda row: dict(
-            fields(row, "id tenant_review_id created_at"), file=file_data(db.get(File, row.file_id))
-        ),
-        f"proofs:{review_id}",
-        limit,
-        cursor,
-    )
-
-
 @router.get("/flats/{flat_id}/interactions")
 def interactions(
     flat_id: UUID, limit: Limit = 20, cursor: str | None = None, db: Session = Depends(get_db)
@@ -244,14 +197,9 @@ def create_interaction(
             "INTERACTION_REVIEW_ALREADY_EXISTS",
             "You have already shared an interaction for this flat.",
         )
-    files = attachment_files(db, body.supporting_file_ids, user, "interaction_support")
-    row = Interaction(
-        author_id=user.id, flat_id=flat_id, **body.model_dump(exclude={"supporting_file_ids"})
-    )
+    row = Interaction(author_id=user.id, flat_id=flat_id, **body.model_dump())
     db.add(row)
     db.flush()  # A database unique constraint also guards concurrent requests.
-    for file in files:
-        db.add(Attachment(interaction_review_id=row.id, file_id=file.id))
     response.headers["Location"] = f"/api/v1/interactions/{row.id}"
     return {"data": interaction_data(db, row)}
 
@@ -282,84 +230,6 @@ def own_interaction(
     row = get_or_404(db, Interaction, interaction_id)
     require_author(row, user, True)
     return {"data": interaction_data(db, row) | {"place": place_of(db, row.flat_id)}}
-
-
-def attachment_data(db, row):
-    return dict(
-        fields(row, "id interaction_review_id created_at"),
-        file=file_data(db.get(File, row.file_id)),
-    )
-
-
-@router.get("/interactions/{interaction_id}/attachments")
-def attachments(
-    interaction_id: UUID,
-    limit: Limit = 20,
-    cursor: str | None = None,
-    user: User = Depends(current_user),
-    db: Session = Depends(get_db),
-):
-    require_author(get_or_404(db, Interaction, interaction_id), user, True)
-    return page(
-        db,
-        select(Attachment).where(
-            Attachment.interaction_review_id == interaction_id, Attachment.removed_at.is_(None)
-        ),
-        Attachment,
-        lambda r: attachment_data(db, r),
-        f"attachments:{interaction_id}",
-        limit,
-        cursor,
-    )
-
-
-@router.post("/interactions/{interaction_id}/attachments", status_code=201)
-def add_attachment(
-    interaction_id: UUID,
-    body: AttachmentBody,
-    response: Response,
-    user: User = Depends(current_user),
-    db: Session = Depends(get_db),
-):
-    require_author(get_or_404(db, Interaction, interaction_id), user)
-    file = attachment_files(db, [body.file_id], user, "interaction_support")[0]
-    row = Attachment(interaction_review_id=interaction_id, file_id=file.id)
-    db.add(row)
-    db.flush()
-    response.headers["Location"] = f"/api/v1/interactions/{interaction_id}/attachments/{row.id}"
-    return {"data": attachment_data(db, row)}
-
-
-@router.get("/interactions/{interaction_id}/attachments/{attachment_id}")
-def attachment(
-    interaction_id: UUID,
-    attachment_id: UUID,
-    user: User = Depends(current_user),
-    db: Session = Depends(get_db),
-):
-    require_author(get_or_404(db, Interaction, interaction_id), user, True)
-    row = get_or_404(db, Attachment, attachment_id)
-    if row.interaction_review_id != interaction_id or row.removed_at:
-        fail(404, "NOT_FOUND", "Attachment unavailable.")
-    return {"data": attachment_data(db, row)}
-
-
-@router.delete("/interactions/{interaction_id}/attachments/{attachment_id}", status_code=204)
-def remove_attachment(
-    interaction_id: UUID,
-    attachment_id: UUID,
-    user: User = Depends(current_user),
-    db: Session = Depends(get_db),
-):
-    require_author(get_or_404(db, Interaction, interaction_id), user, True)
-    row = get_or_404(db, Attachment, attachment_id, True)
-    if row.interaction_review_id != interaction_id:
-        fail(404, "NOT_FOUND", "Attachment unavailable.")
-    if not row.removed_at:
-        row.removed_at = now()
-        file = get_or_404(db, File, row.file_id, True)
-        file.status = "deletion_pending"
-    return Response(status_code=204)
 
 
 @router.post("/tenant-reviews/{review_id}/deletion-requests", status_code=201)

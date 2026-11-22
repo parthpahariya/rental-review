@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from .common import current_user, fail, fields, get_or_404, lock, page
 from .database import get_db
-from .models import Flat, Interaction, Location, ProofPolicy, TenantReview, User, now
+from .models import Flat, Interaction, Location, TenantReview, User, now
 from .schemas import FlatBody, LocationBody, LocationEditBody
 
 router = APIRouter()
@@ -52,31 +52,9 @@ def flat_data(db, row):
     }
 
 
-def effective_policy(db):
-    policy = db.scalar(
-        select(ProofPolicy)
-        .where(ProofPolicy.effective_from <= now())
-        .order_by(ProofPolicy.effective_from.desc())
-        .limit(1)
-    )
-    if not policy:
-        fail(
-            503, "SERVICE_UNAVAILABLE", "Review policy is not initialized. Run database migrations."
-        )
-    return policy
-
-
 @router.get("/review-submission-policy")
-def submission_policy(db: Session = Depends(get_db)):
-    policy = effective_policy(db)
-    return {
-        "data": {
-            "proof_policy_id": policy.id,
-            "proof_required": policy.proof_required,
-            "effective_from": policy.effective_from,
-            "editing_window_days": 30,
-        }
-    }
+def submission_policy():
+    return {"data": {"editing_window_days": 30}}
 
 
 @router.get("/locations")

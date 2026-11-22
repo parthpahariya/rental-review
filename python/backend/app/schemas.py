@@ -1,7 +1,6 @@
 import re
 from datetime import date
 from typing import Annotated, Literal
-from uuid import UUID
 
 from pydantic import (
     BaseModel,
@@ -9,7 +8,6 @@ from pydantic import (
     ConfigDict,
     Field,
     StringConstraints,
-    field_validator,
     model_validator,
 )
 
@@ -24,9 +22,6 @@ CalendarDate = Annotated[date, BeforeValidator(calendar_date)]
 
 Nonblank = Annotated[
     str, StringConstraints(strict=True, strip_whitespace=True, min_length=1, max_length=10000)
-]
-OwnerName = Annotated[
-    str, StringConstraints(strict=True, strip_whitespace=True, min_length=1, max_length=200)
 ]
 Rating = Annotated[int, Field(strict=True, ge=1, le=5)]
 
@@ -46,19 +41,15 @@ class ConfirmationBody(Body):
 
 
 class ReviewBody(Body):
-    owner_name: OwnerName
     tenancy_start_date: CalendarDate
     tenancy_end_date: CalendarDate
     rating: Rating
     feedback: Nonblank
-    proof_file_ids: list[UUID] = Field(default_factory=list, max_length=10)
 
     @model_validator(mode="after")
     def validate_period(self):
         if self.tenancy_end_date <= self.tenancy_start_date:
             raise ValueError("Tenancy end must be later than tenancy start")
-        if len(set(self.proof_file_ids)) != len(self.proof_file_ids):
-            raise ValueError("File IDs must be unique")
         return self
 
 
@@ -76,17 +67,8 @@ class EditBody(Body):
 
 
 class InteractionBody(Body):
-    owner_name: OwnerName
     description: Nonblank
     interaction_date: CalendarDate
-    supporting_file_ids: list[UUID] = Field(default_factory=list, max_length=10)
-
-    @field_validator("supporting_file_ids")
-    @classmethod
-    def unique_files(cls, value):
-        if len(set(value)) != len(value):
-            raise ValueError("File IDs must be unique")
-        return value
 
 
 class DeletionBody(Body):
@@ -96,10 +78,6 @@ class DeletionBody(Body):
 class DecisionBody(Body):
     decision: Literal["approved", "rejected"]
     decision_note: Nonblank | None = None
-
-
-class AttachmentBody(Body):
-    file_id: UUID
 
 
 ShortText = Annotated[

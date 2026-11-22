@@ -28,7 +28,6 @@ export type Review = {
   flat_id: string;
   location_id?: string;
   place?: Place;
-  owner_name: string;
   rating: number;
   feedback: string;
   tenancy_start_date: string;
@@ -44,7 +43,6 @@ export type Interaction = {
   flat_id: string;
   location_id?: string;
   place?: Place;
-  owner_name: string;
   description: string;
   interaction_date: string;
   submitted_at: string;
@@ -67,10 +65,6 @@ export type Deletion = {
   status: string;
   decision_note: string | null;
   review?: Review;
-};
-export type Attachment = {
-  id: string;
-  file: { id: string; original_filename: string };
 };
 export type List<T> = { data: T[]; page: { next_cursor: string | null } };
 
@@ -174,30 +168,4 @@ export async function somePages<T>(
     pages += 1;
   } while (cursor && pages < maxPages);
   return { rows: results, more: !!cursor };
-}
-
-export async function upload(file: File, purpose: string) {
-  const form = new FormData();
-  form.set("file", file);
-  form.set("purpose", purpose);
-  const result = await api<{ data: { id: string; status: string } }>("/files", {
-    method: "POST",
-    body: form,
-  });
-  if (result.data.status !== "ready")
-    throw new Error("The upload is still being processed. Please try again.");
-  return result.data.id;
-}
-
-export async function downloadFile(fileId: string, filename: string) {
-  const response = await fetch(`/api/v1/files/${fileId}/content`, {
-    headers: sessionToken ? { Authorization: `Bearer ${sessionToken}` } : {},
-  });
-  if (!response.ok) throw new Error("This file is unavailable.");
-  const url = URL.createObjectURL(await response.blob());
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  link.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
