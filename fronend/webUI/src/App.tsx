@@ -640,9 +640,6 @@ export default function App() {
             <nav className="footer-links" aria-label="About this site">
               <a href={PATHS.privacy}>Privacy Policy</a>
               <a href={PATHS.deleteData}>Delete your data</a>
-              <a href="/api/docs" target="_blank" rel="noreferrer">
-                API documentation
-              </a>
             </nav>
           </footer>
         </main>
