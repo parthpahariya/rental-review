@@ -1,0 +1,4 @@
+// Shared build settings for the RentalReview target.
+// Apple team for release signing (ci/ios.sh). Team IDs are not secret.
+DEVELOPMENT_TEAM = RHW4KG86UD
+#include "Google.xcconfig"

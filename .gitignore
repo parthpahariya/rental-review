@@ -19,3 +19,12 @@ test-results/
 .npm/
 report.xml
 .coverage
+# Mobile apps (frontend/mobileUI)
+.gradle/
+local.properties
+frontend/mobileUI/android/build/
+frontend/mobileUI/android/app/build/
+frontend/mobileUI/android/.kotlin/
+xcuserdata/
+DerivedData/
+*.xcuserstate

@@ -88,6 +88,7 @@ files change. Press Ctrl+C to stop watching; the stack keeps running.
 ```text
 python/backend/          FastAPI, SQLAlchemy models, Alembic migrations, pytest
 fronend/webUI/           React, TypeScript, Vite, Leaflet (+ MapLibre for Ola), Vitest, Nginx
+frontend/mobileUI/       Native Android (Kotlin, Compose) and iOS (Swift, SwiftUI) apps; see its README
 compose.yaml            Application stack and resource limits
 compose.test.yaml       Isolated PostgreSQL 18.6 integration-test stack (never the shared database)
 compose.ci.yaml         GitLab Docker-in-Docker port override
