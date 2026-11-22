@@ -1067,6 +1067,9 @@ describe("Rental Review", () => {
     expect(
       within(footer).getByRole("link", { name: "Delete your data" }),
     ).toHaveAttribute("href", "/delete-data");
+    expect(
+      screen.queryByRole("link", { name: /API documentation/ }),
+    ).not.toBeInTheDocument();
   });
 
   it("shows How it works only on the home page and a profile icon when signed in", async () => {
