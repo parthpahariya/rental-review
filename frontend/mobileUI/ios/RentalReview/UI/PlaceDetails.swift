@@ -47,11 +47,15 @@ struct PlaceDetails: View {
                         } else if model.tab == .tenant {
                             if model.reviews.isEmpty { empty("No tenant reviews yet") }
                             ForEach(model.reviews) { r in
-                                FeedbackCard(review: r, own: model.ownReviews[r.id]) { editing = $0 }
+                                FeedbackCard(review: r, own: model.ownReviews[r.id], onEdit: { editing = $0 },
+                                             footer: AnyView(Discussion(onReview: true, subjectId: r.id, initialCount: r.comment_count ?? 0)))
                             }
                         } else {
                             if model.interactions.isEmpty { empty("No interactions yet") }
-                            ForEach(model.interactions) { FeedbackCard(interaction: $0) }
+                            ForEach(model.interactions) { i in
+                                FeedbackCard(interaction: i,
+                                             footer: AnyView(Discussion(onReview: false, subjectId: i.id, initialCount: i.comment_count ?? 0)))
+                            }
                         }
                     }
                     .listRowSeparator(.hidden)

@@ -4,7 +4,7 @@ import uuid
 from datetime import date, timedelta
 
 from .database import SessionLocal
-from .models import Flat, Interaction, Location, TenantReview, User, now
+from .models import Comment, Flat, Interaction, Location, TenantReview, User, now
 
 
 def seed_id(name):
@@ -12,6 +12,42 @@ def seed_id(name):
 
 
 def seed():
+    seed_places()
+    seed_comments()
+
+
+def seed_comments():
+    """A short demo discussion; added on its own so existing demo data gets it too."""
+    with SessionLocal.begin() as db:
+        review = db.get(TenantReview, seed_id("review-2"))
+        if review is None or db.get(Comment, seed_id("comment-0")):
+            return
+        neighbour = db.get(User, seed_id("neighbour"))
+        if not neighbour:
+            neighbour = User(id=seed_id("neighbour"), google_subject="demo-neighbour")
+            db.add(neighbour)
+            db.flush()
+        thread = [
+            (neighbour.id, "How long did the deposit settlement take in the end?"),
+            (review.author_id, "About six weeks, after three follow-ups by email."),
+            (neighbour.id, "Thanks, that helps. I will ask for the timeline in writing."),
+        ]
+        for index, (author_id, body) in enumerate(thread):
+            at = now() - timedelta(days=10 - index)
+            db.add(
+                Comment(
+                    id=seed_id(f"comment-{index}"),
+                    author_id=author_id,
+                    tenant_review_id=review.id,
+                    body=body,
+                    submitted_at=at,
+                    updated_at=at,
+                )
+            )
+    print("Fictional demo discussion seeded.")
+
+
+def seed_places():
     with SessionLocal.begin() as db:
         if db.get(Location, seed_id("location-0")):
             print("Demo data already exists.")

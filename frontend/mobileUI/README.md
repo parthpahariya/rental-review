@@ -17,7 +17,8 @@ same features as the web app in `fronend/webUI`:
 - **Legal:** Privacy Policy and Delete your data open the site's pages.
 
 **Supported versions:** Android 6.0+ (minSdk 23, the oldest Compose and AndroidX
-support; `java.time` is desugared for 6.0–7.1) and iOS 15+ (iPhone 6s and newer). The
+support; `java.time` is desugared for 6.0–7.1) and iOS 15.5+ (iPhone 6s and newer; MapLibre needs 15.5, and every iOS 15 phone
+can update to 15.8). The
 iOS app avoids iOS 16/17-only SwiftUI: state is an `ObservableObject`, and
 `UI/Compat.swift` falls back to NavigationView, full-height sheets and TextEditor on
 iOS 15. Raising either minimum needs nothing beyond the version setting.

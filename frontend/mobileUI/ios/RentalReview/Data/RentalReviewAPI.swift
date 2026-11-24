@@ -135,4 +135,30 @@ final class RentalReviewAPI {
     func decide(requestId: String, approve: Bool) async throws {
         try await raw("POST", "/admin/deletion-requests/\(requestId)/decision", body: ["decision": approve ? "approved" : "rejected"])
     }
+
+    // MARK: Discussions (comments under a review or interaction, oldest first)
+
+    private func subjectPath(onReview: Bool, _ id: String) -> String {
+        onReview ? "/tenant-reviews/\(id)" : "/interactions/\(id)"
+    }
+    func comments(onReview: Bool, subjectId: String) async throws -> [Comment] {
+        try await all("\(subjectPath(onReview: onReview, subjectId))/comments", Comment.self).rows
+    }
+    func postComment(onReview: Bool, subjectId: String, body: String) async throws {
+        try await raw("POST", "\(subjectPath(onReview: onReview, subjectId))/comments", body: ["body": body])
+    }
+    func editComment(id: String, body: String) async throws {
+        try await raw("PATCH", "/comments/\(id)", body: ["body": body])
+    }
+    func deleteComment(id: String) async throws { try await raw("DELETE", "/comments/\(id)") }
+    func reportComment(id: String, reason: String) async throws {
+        try await raw("POST", "/comments/\(id)/reports", body: ["reason": reason])
+    }
+    func ownComments() async throws -> [Comment] { try await all("/me/comments", Comment.self).rows }
+    func pendingCommentReports() async throws -> [CommentReport] {
+        try await all("/admin/comment-reports", CommentReport.self).rows
+    }
+    func decideReport(id: String, remove: Bool) async throws {
+        try await raw("POST", "/admin/comment-reports/\(id)/decision", body: ["decision": remove ? "removed" : "dismissed"])
+    }
 }

@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
-import { api, allPages, message, patch, post, setToken } from "./api";
+import { api, allPages, message, patch, post, remove, setToken } from "./api";
 import type {
   Account,
+  Comment,
+  CommentReport,
   Deletion,
   Flat,
   Interaction,
@@ -139,7 +141,7 @@ export function Modal({
   );
 }
 
-const shortDate = (value: string) =>
+export const shortDate = (value: string) =>
   new Date(
     value.length === 10 ? `${value}T00:00:00` : value,
   ).toLocaleDateString(undefined, {
@@ -162,11 +164,14 @@ export function FeedbackCard({
   item,
   own,
   onEdit,
+  children,
 }: {
   item: Review | Interaction;
   /** The viewer's own copy of this review, when they wrote it. */
   own?: Review;
   onEdit: (review: Review) => void;
+  /** Shown under the card, e.g. its discussion. */
+  children?: ReactNode;
 }) {
   const isReview = "rating" in item;
   return (
@@ -242,6 +247,7 @@ export function FeedbackCard({
           </span>
         )}
       </footer>
+      {children}
     </article>
   );
 }
@@ -537,6 +543,8 @@ export function AccountPanel({
   const [interactions, setInteractions] = useState<Interaction[]>([]);
   const [requests, setRequests] = useState<Deletion[]>([]);
   const [adminRequests, setAdminRequests] = useState<Deletion[]>([]);
+  const [comments, setComments] = useState<Comment[]>([]);
+  const [reports, setReports] = useState<CommentReport[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -546,15 +554,23 @@ export function AccountPanel({
   async function refresh() {
     setError("");
     try {
-      const [own, ints, reqs, admin, flats] = await Promise.all([
-        allPages<Review>("/me/tenant-reviews"),
-        allPages<Interaction>("/me/interactions"),
-        allPages<Deletion>("/me/deletion-requests"),
-        account.role === "admin"
-          ? allPages<Deletion>("/admin/deletion-requests")
-          : Promise.resolve([]),
-        allPages<OwnFlat>("/me/flats"),
-      ]);
+      const isAdmin = account.role === "admin";
+      const [own, ints, reqs, admin, flats, ownComments, adminReports] =
+        await Promise.all([
+          allPages<Review>("/me/tenant-reviews"),
+          allPages<Interaction>("/me/interactions"),
+          allPages<Deletion>("/me/deletion-requests"),
+          isAdmin
+            ? allPages<Deletion>("/admin/deletion-requests")
+            : Promise.resolve([]),
+          allPages<OwnFlat>("/me/flats"),
+          allPages<Comment>("/me/comments"),
+          isAdmin
+            ? allPages<CommentReport>("/admin/comment-reports")
+            : Promise.resolve([]),
+        ]);
+      setComments(ownComments.filter((c) => !c.deleted_at));
+      setReports(adminReports);
       setAdded(flats);
       setReviews(own);
       setInteractions(ints);
@@ -810,8 +826,89 @@ export function AccountPanel({
               ))}
             </>
           )}
+          {comments.length > 0 && (
+            <>
+              <h3>Your comments</h3>
+              {comments.map((c) => (
+                <article className="account-record" key={c.id}>
+                  <strong>
+                    {c.place?.building_name || "Rental property"} · Flat{" "}
+                    {c.place?.flat_label}
+                  </strong>
+                  <small>
+                    On{" "}
+                    {c.subject_type === "tenant_review"
+                      ? "a tenant review"
+                      : "an interaction"}{" "}
+                    · {shortDate(c.submitted_at)}
+                    {c.removed_at && " · Removed by an admin"}
+                  </small>
+                  <p>{c.body}</p>
+                  {!c.removed_at && (
+                    <div className="inline-actions">
+                      <button
+                        className="text-button danger-text"
+                        disabled={busy}
+                        onClick={() => {
+                          if (window.confirm("Delete your comment?"))
+                            void run(() => remove(`/comments/${c.id}`));
+                        }}
+                      >
+                        Delete comment
+                      </button>
+                    </div>
+                  )}
+                </article>
+              ))}
+            </>
+          )}
           {account.role === "admin" && (
             <>
+              <h3>Admin · Reported comments</h3>
+              {!reports.length && loaded && (
+                <p className="muted">No reported comments.</p>
+              )}
+              {reports.map((report) => (
+                <article className="account-record" key={report.id}>
+                  <strong>
+                    {report.place.building_name || "Rental property"} · Flat{" "}
+                    {report.place.flat_label}
+                  </strong>
+                  <small>
+                    On a{" "}
+                    {report.comment.subject_type === "tenant_review"
+                      ? "tenant review"
+                      : "n interaction"}
+                    :{" "}
+                    {"feedback" in report.subject
+                      ? report.subject.feedback
+                      : report.subject.description}
+                  </small>
+                  <p>“{report.comment.body}”</p>
+                  <p>Reason: {report.reason}</p>
+                  <div className="inline-actions">
+                    {(["removed", "dismissed"] as const).map((decision) => (
+                      <button
+                        key={decision}
+                        disabled={busy}
+                        className="button small"
+                        onClick={() =>
+                          void run(() =>
+                            post(
+                              `/admin/comment-reports/${report.id}/decision`,
+                              { decision },
+                            ),
+                          )
+                        }
+                      >
+                        {decision === "removed"
+                          ? "Remove comment"
+                          : "Keep comment"}
+                      </button>
+                    ))}
+                  </div>
+                </article>
+              ))}
               <h3>Admin · Pending deletion requests</h3>
               {!adminRequests.length && loaded && (
                 <p className="muted">You’re all caught up.</p>

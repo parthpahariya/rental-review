@@ -134,7 +134,13 @@ fun PlaceRow(location: Location, onClick: () -> Unit) {
 
 /** One tenant review or interaction. Reviews name no one: the card says its kind. */
 @Composable
-fun FeedbackCard(review: Review? = null, interaction: Interaction? = null, own: Review? = null, onEdit: (Review) -> Unit = {}) {
+fun FeedbackCard(
+    review: Review? = null,
+    interaction: Interaction? = null,
+    own: Review? = null,
+    onEdit: (Review) -> Unit = {},
+    footer: @Composable () -> Unit = {},
+) {
     val isReview = review != null
     Column(
         Modifier.fillMaxWidth().border(1.dp, Brand.line, RoundedCornerShape(16.dp))
@@ -165,6 +171,7 @@ fun FeedbackCard(review: Review? = null, interaction: Interaction? = null, own: 
             Text("On ${shortDate(interaction.interaction_date)}", color = Brand.muted, fontSize = 12.sp)
             Text(interaction.description, color = Brand.ink)
         }
+        footer()
     }
 }
 

@@ -316,6 +316,24 @@ Request:
 
 Decisions are final. Repeated or competing decisions return `409 REQUEST_ALREADY_DECIDED`; clients can retrieve the request to reconcile a lost response. Unknown requests return `404`. There is no requirement for the requester to remain active while an admin considers their request.
 
+## Discussions (comments) and comment reports
+
+Every visible tenant review and interaction has one public discussion: a flat list of comments, oldest first. Comments name no one. The public `Comment` shape is `id`, `subject_type` (`tenant_review` or `interaction`), `tenant_review_id`, `interaction_id`, `body`, `submitted_at`, `updated_at`, `edited`, `editing_deadline` and `by_subject_author` (true when the commenter also wrote the review or interaction under discussion). When the request carries a valid session, each comment also has `mine` and `can_edit`; an invalid or missing token never fails a public read. `TenantReview` and `Interaction` responses include `comment_count`, the number of visible comments.
+
+| Endpoint | Access | Result |
+| --- | --- | --- |
+| `GET /tenant-reviews/{review_id}/comments`, `GET /interactions/{interaction_id}/comments` | Public | List of `Comment`, oldest first; default `limit` 50. `404` for a deleted review or unknown subject |
+| `POST` on the same paths | Active user | `201` `Comment`; body `{ "body": "…" }`, 1–2000 characters after trimming |
+| `GET /comments/{comment_id}` | Public | Single visible `Comment` |
+| `PATCH /comments/{comment_id}` | Author | `{ "body": "…" }` within 30 days of posting, else `403 EDIT_WINDOW_CLOSED` |
+| `DELETE /comments/{comment_id}` | Author | `204`; hides it for everyone and dismisses its pending reports |
+| `POST /comments/{comment_id}/reports` | Active user | `201`; body `{ "reason": "…" }`. `403 CANNOT_REPORT_OWN`; `409 ALREADY_REPORTED` (one report per person per comment) |
+| `GET /me/comments` | Active user | The viewer's comments with `place`, `flat_id`, `deleted_at` and `removed_at` |
+| `GET /admin/comment-reports` | Admin | `status=pending|removed|dismissed|all`, default `pending`; each report has `reason`, `status`, the `comment`, the `subject` it replies to and its `place` |
+| `POST /admin/comment-reports/{report_id}/decision` | Admin | `{ "decision": "removed" | "dismissed", "decision_note": … }`. One decision settles every pending report of that comment; `removed` hides the comment. Repeats return `409 REPORT_ALREADY_DECIDED` |
+
+Deleted and removed comments disappear from discussions, counts and direct reads (`404`), but are kept privately so reports and decisions keep their context. A comment under a deleted review goes with it.
+
 ## Required behavior checks
 
 These scenarios define acceptance expectations for a future implementation; they are not claims of completed runtime tests.

@@ -91,11 +91,17 @@ fun PlaceDetails(vm: AppViewModel, onSignIn: () -> Unit) {
         } else if (vm.tab == FeedbackTab.TENANT) {
             if (vm.reviews.isEmpty()) item { Empty("No tenant reviews yet") }
             items(vm.reviews, key = { it.id }) { r ->
-                FeedbackCard(review = r, own = vm.ownReviews[r.id], onEdit = { editing = it })
+                FeedbackCard(review = r, own = vm.ownReviews[r.id], onEdit = { editing = it }) {
+                    Discussion(vm, onReview = true, subjectId = r.id, initialCount = r.comment_count, onSignIn = onSignIn)
+                }
             }
         } else {
             if (vm.interactions.isEmpty()) item { Empty("No interactions yet") }
-            items(vm.interactions, key = { it.id }) { FeedbackCard(interaction = it) }
+            items(vm.interactions, key = { it.id }) { i ->
+                FeedbackCard(interaction = i) {
+                    Discussion(vm, onReview = false, subjectId = i.id, initialCount = i.comment_count, onSignIn = onSignIn)
+                }
+            }
         }
         item { Spacer(Modifier.height(24.dp)) }
     }

@@ -23,6 +23,11 @@ erDiagram
     FLATS ||--o{ TENANT_REVIEWS : receives
     FLATS ||--o{ INTERACTION_REVIEWS : receives
     TENANT_REVIEWS ||--o{ REVIEW_DELETION_REQUESTS : subject_of
+    USERS ||--o{ COMMENTS : writes
+    TENANT_REVIEWS ||--o{ COMMENTS : discussed_in
+    INTERACTION_REVIEWS ||--o{ COMMENTS : discussed_in
+    COMMENTS ||--o{ COMMENT_REPORTS : reported_in
+    USERS ||--o{ COMMENT_REPORTS : reports
 ```
 
 Rate-limit buckets also cover people who have not signed in yet, so they have no user foreign key.
@@ -162,6 +167,38 @@ Pending requests have no decision fields. Approved or rejected requests require 
 Request creation requires an active author and a visible review, independent of the 30-day edit window. Pending and rejected requests leave the review visible. Approval locks the request and review, verifies admin authority, and atomically sets the request to `approved` and the review's `deleted_at` to the decision instant. That removes both feedback and rating from public results and aggregates. Keep the original review and request privately for audit; no tenant-facing physical-delete operation is provided.
 
 FR-08 is modeled for tenant reviews because its removal criteria reference ratings and the Tenant Reviews tab. Extending deletion to interactions awaits the explicitly unresolved interaction-deletion decision.
+
+## Discussion tables
+
+### `comments`
+
+| Field | Type | Rules |
+| --- | --- | --- |
+| `id` | UUID | Primary key |
+| `author_id` | UUID | Foreign key to `users`; never exposed publicly |
+| `tenant_review_id` | UUID, nullable | Foreign key to `tenant_reviews` |
+| `interaction_id` | UUID, nullable | Foreign key to `interaction_reviews`; exactly one of the two is set (`ck_comments_one_subject`) |
+| `body` | text | Nonblank; the API caps it at 2000 characters |
+| `submitted_at`, `updated_at` | timestamp | Posting and last edit; authors edit for 30 days |
+| `deleted_at` | timestamp, nullable | Set when its author deletes it |
+| `removed_at` | timestamp, nullable | Set when an admin removes it after a report |
+
+A comment is visible when both `deleted_at` and `removed_at` are null and, for review comments, the review is visible. Partial indexes on `(tenant_review_id, submitted_at, id)` and `(interaction_id, submitted_at, id)` serve each discussion oldest first.
+
+### `comment_reports`
+
+| Field | Type | Rules |
+| --- | --- | --- |
+| `id` | UUID | Primary key |
+| `comment_id` | UUID | Foreign key to `comments` |
+| `reported_by` | UUID | Foreign key to `users`; never the comment's author |
+| `reason` | text | Nonblank |
+| `status` | enum | `pending`, `removed` or `dismissed`; default `pending` |
+| `submitted_at`, `decided_at` | timestamp | Report and decision instants |
+| `decided_by` | UUID, nullable | Deciding admin |
+| `decision_note` | text, nullable | Optional explanation |
+
+`uq_comment_report_reporter` allows one report per person per comment. An admin decision locks the comment and settles all of its pending reports at once; an author's deletion dismisses them.
 
 ## Constraints, transactions, and access control
 

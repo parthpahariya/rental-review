@@ -11,7 +11,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from starlette.exceptions import HTTPException
 
-from . import auth, google, maps, properties, reviews
+from . import auth, comments, google, maps, properties, reviews
 from .common import ApiError
 from .config import get_settings
 from .database import engine
@@ -159,6 +159,10 @@ async def integrity_error(request, exc):
         return error_response(
             request, 409, "REQUEST_ALREADY_PENDING", "A deletion request is already pending."
         )
+    if constraint == "uq_comment_report_reporter":
+        return error_response(
+            request, 409, "ALREADY_REPORTED", "You have already reported this comment."
+        )
     return error_response(
         request, 409, "RESOURCE_CONFLICT", "This change conflicts with an existing record."
     )
@@ -190,5 +194,6 @@ for router in [
     maps.router,
     properties.router,
     reviews.router,
+    comments.router,
 ]:
     app.include_router(router, prefix="/api/v1")

@@ -249,6 +249,35 @@ struct NotebookView: View {
                         }
                     }
 
+                    if !model.notebook.comments.isEmpty {
+                        Section("Your comments") {
+                            ForEach(model.notebook.comments) { c in
+                                record(c.place.map { "\($0.building_name ?? "Rental property") · Flat \($0.flat_label)" } ?? "Comment",
+                                       (c.onReview ? "On a tenant review" : "On an interaction") + " · \(shortDate(c.submitted_at))"
+                                           + (c.removed_at != nil ? " · Removed by an admin" : ""),
+                                       c.body) {
+                                    if c.removed_at == nil {
+                                        Button("Delete comment", role: .destructive) { model.deleteOwnComment(c) }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if account.isAdmin {
+                        Section("Admin · Reported comments") {
+                            if model.notebook.commentReports.isEmpty { Text("No reported comments.").foregroundStyle(Brand.muted) }
+                            ForEach(model.notebook.commentReports) { r in
+                                record("\(r.place.building_name ?? "Rental property") · Flat \(r.place.flat_label)",
+                                       (r.comment.onReview ? "On a tenant review: " : "On an interaction: ") + r.subject.text,
+                                       "“\(r.comment.body)”\nReason: \(r.reason)") {
+                                    Button("Remove") { model.decideReport(r, remove: true) }.buttonStyle(.borderedProminent).tint(Brand.ink)
+                                    Button("Keep") { model.decideReport(r, remove: false) }.buttonStyle(.bordered)
+                                }
+                            }
+                        }
+                    }
+
                     if account.isAdmin {
                         Section("Admin · Pending deletion requests") {
                             if model.notebook.adminRequests.isEmpty { Text("You’re all caught up.").foregroundStyle(Brand.muted) }

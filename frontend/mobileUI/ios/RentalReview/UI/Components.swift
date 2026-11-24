@@ -139,6 +139,8 @@ struct FeedbackCard: View {
     var interaction: Interaction?
     var own: Review?
     var onEdit: (Review) -> Void = { _ in }
+    /// Shown under the card, e.g. its discussion.
+    var footer: AnyView?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -159,6 +161,7 @@ struct FeedbackCard: View {
                 Text("On \(shortDate(interaction.interaction_date))").font(.caption).foregroundStyle(Brand.muted)
                 Text(interaction.description)
             }
+            if let footer { footer }
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)

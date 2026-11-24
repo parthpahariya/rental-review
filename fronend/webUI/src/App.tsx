@@ -12,6 +12,7 @@ import {
   SignIn,
 } from "./components";
 import PropertyMap from "./Map";
+import Discussion from "./Discussion";
 import LocalitySearch, { DEFAULT_CENTER } from "./LocalitySearch";
 import type { Area } from "./LocalitySearch";
 import type { Bounds, Focus, MapView, Point } from "./Map";
@@ -371,6 +372,11 @@ export default function App() {
   }
   function changeArea() {
     document.getElementById("locality-search")?.focus();
+  }
+  /** Sign in and come back to the same view, e.g. to join a discussion. */
+  function signInOnly() {
+    afterSignIn.current = null;
+    setDialog("signin");
   }
   function requireAccount(next: Dialog) {
     if (account) setDialog(next);
@@ -960,7 +966,13 @@ export default function App() {
                               item={item}
                               own={mine.get(item.id)}
                               onEdit={setEditingReview}
-                            />
+                            >
+                              <Discussion
+                                subject={item}
+                                account={account}
+                                onSignIn={signInOnly}
+                              />
+                            </FeedbackCard>
                           ))}
                         </div>
                       </>

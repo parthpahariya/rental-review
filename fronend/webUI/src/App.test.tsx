@@ -823,7 +823,8 @@ describe("Rental Review", () => {
           );
         if (
           input.includes("/me/interactions") ||
-          input.includes("/me/deletion")
+          input.includes("/me/deletion") ||
+          input.includes("/me/comments")
         )
           return Promise.resolve(result([]));
         if (input.includes("/permissions"))

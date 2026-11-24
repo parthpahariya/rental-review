@@ -57,6 +57,8 @@ struct Review: Codable, Hashable, Identifiable {
     var can_edit: Bool?
     var can_request_deletion: Bool?
     var deleted_at: String?
+    /// Visible comments in this review's discussion.
+    var comment_count: Int?
 }
 
 struct Interaction: Codable, Hashable, Identifiable {
@@ -67,6 +69,45 @@ struct Interaction: Codable, Hashable, Identifiable {
     let description: String
     let interaction_date: String
     let submitted_at: String
+    /// Visible comments in this interaction's discussion.
+    var comment_count: Int?
+}
+
+/// A comment in the discussion under a review or interaction. It names no one;
+/// `by_subject_author` marks replies from whoever wrote the review/interaction.
+struct Comment: Codable, Hashable, Identifiable {
+    let id: String
+    let subject_type: String
+    let body: String
+    let submitted_at: String
+    var edited: Bool?
+    var by_subject_author: Bool?
+    /// Only when signed in: the viewer wrote it, and may still edit it.
+    var mine: Bool?
+    var can_edit: Bool?
+    /// Only in the viewer's own list.
+    var place: Place?
+    var deleted_at: String?
+    var removed_at: String?
+
+    var onReview: Bool { subject_type == "tenant_review" }
+}
+
+/// What a reported comment replies to: a review (feedback) or interaction (description).
+struct CommentSubject: Codable, Hashable {
+    var feedback: String?
+    var description: String?
+    var text: String { feedback ?? description ?? "" }
+}
+
+/// A reported comment in the admin queue, with what it replies to.
+struct CommentReport: Codable, Hashable, Identifiable {
+    let id: String
+    let reason: String
+    let status: String
+    let comment: Comment
+    let subject: CommentSubject
+    let place: Place
 }
 
 struct Account: Codable, Hashable {
