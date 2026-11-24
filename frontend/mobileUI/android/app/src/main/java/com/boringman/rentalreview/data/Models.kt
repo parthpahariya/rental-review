@@ -70,6 +70,8 @@ data class Review(
     val can_edit: Boolean = false,
     val can_request_deletion: Boolean = false,
     val deleted_at: String? = null,
+    /** Visible comments in this review's discussion. */
+    val comment_count: Int = 0,
 )
 
 @Serializable
@@ -81,7 +83,52 @@ data class Interaction(
     val description: String,
     val interaction_date: String,
     val submitted_at: String,
+    /** Visible comments in this interaction's discussion. */
+    val comment_count: Int = 0,
 )
+
+/**
+ * A comment in the discussion under a review or interaction. It names no one;
+ * [by_subject_author] marks replies from whoever wrote the review/interaction.
+ */
+@Serializable
+data class Comment(
+    val id: String,
+    val subject_type: String,
+    val body: String,
+    val submitted_at: String,
+    val edited: Boolean = false,
+    val by_subject_author: Boolean = false,
+    /** Only when signed in: the viewer wrote it, and may still edit it. */
+    val mine: Boolean = false,
+    val can_edit: Boolean = false,
+    /** Only in the viewer's own list. */
+    val place: Place? = null,
+    val deleted_at: String? = null,
+    val removed_at: String? = null,
+) {
+    val onReview: Boolean get() = subject_type == "tenant_review"
+}
+
+/** What a reported comment replies to: a review (feedback) or interaction (description). */
+@Serializable
+data class CommentSubject(val feedback: String? = null, val description: String? = null) {
+    val text: String get() = feedback ?: description.orEmpty()
+}
+
+/** A reported comment in the admin queue, with what it replies to. */
+@Serializable
+data class CommentReport(
+    val id: String,
+    val reason: String,
+    val status: String,
+    val comment: Comment,
+    val subject: CommentSubject,
+    val place: Place,
+)
+
+@Serializable
+data class ReportResult(val id: String, val status: String)
 
 @Serializable
 data class Account(

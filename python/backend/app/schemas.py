@@ -130,3 +130,22 @@ class LocationBody(Body):
 class ProfileBody(Body):
     # A name of your choice, or null to go back to your Google account's name.
     name: ShortText | None
+
+
+CommentText = Annotated[
+    str, StringConstraints(strict=True, strip_whitespace=True, min_length=1, max_length=2000)
+]
+
+
+class CommentBody(Body):
+    body: CommentText
+
+
+class ReportBody(Body):
+    reason: Nonblank
+
+
+class ReportDecisionBody(Body):
+    # removed: hide the comment for everyone; dismissed: keep it.
+    decision: Literal["removed", "dismissed"]
+    decision_note: Nonblank | None = None

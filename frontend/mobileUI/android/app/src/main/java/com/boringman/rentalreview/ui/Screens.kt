@@ -313,7 +313,35 @@ fun NotebookScreen(vm: AppViewModel, activity: Activity) {
                 }
             }
 
+            if (book.comments.isNotEmpty()) {
+                item { Section("Your comments") }
+                items(book.comments, key = { "comment-" + it.id }) { c ->
+                    Record(
+                        title = c.place?.let { "${it.building_name ?: "Rental property"} · Flat ${it.flat_label}" } ?: "Comment",
+                        subtitle = (if (c.onReview) "On a tenant review" else "On an interaction") +
+                            " · ${shortDate(c.submitted_at)}" + if (c.removed_at != null) " · Removed by an admin" else "",
+                        body = c.body,
+                    ) {
+                        if (c.removed_at == null) TextButton(onClick = { vm.deleteOwnComment(c) }) {
+                            Text("Delete comment", color = Brand.poor)
+                        }
+                    }
+                }
+            }
+
             if (account.isAdmin) {
+                item { Section("Admin · Reported comments") }
+                if (book.commentReports.isEmpty()) item { Muted("No reported comments.") }
+                items(book.commentReports, key = { "report-" + it.id }) { r ->
+                    Record(
+                        title = "${r.place.building_name ?: "Rental property"} · Flat ${r.place.flat_label}",
+                        subtitle = (if (r.comment.onReview) "On a tenant review: " else "On an interaction: ") + r.subject.text,
+                        body = "“${r.comment.body}”\nReason: ${r.reason}",
+                    ) {
+                        Button(onClick = { vm.decideReport(r, true) }) { Text("Remove") }
+                        OutlinedButton(onClick = { vm.decideReport(r, false) }) { Text("Keep") }
+                    }
+                }
                 item { Section("Admin · Pending deletion requests") }
                 if (book.adminRequests.isEmpty()) item { Muted("You’re all caught up.") }
                 items(book.adminRequests, key = { "admin-" + it.id }) { d ->

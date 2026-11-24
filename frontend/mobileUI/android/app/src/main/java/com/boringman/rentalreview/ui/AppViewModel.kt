@@ -12,6 +12,8 @@ import com.boringman.rentalreview.auth.GoogleAuth
 import com.boringman.rentalreview.data.Account
 import com.boringman.rentalreview.data.ApiClient
 import com.boringman.rentalreview.data.ApiException
+import com.boringman.rentalreview.data.Comment
+import com.boringman.rentalreview.data.CommentReport
 import com.boringman.rentalreview.data.Deletion
 import com.boringman.rentalreview.data.Flat
 import com.boringman.rentalreview.data.Interaction
@@ -43,6 +45,8 @@ data class Notebook(
     val requests: List<Deletion> = emptyList(),
     val adminRequests: List<Deletion> = emptyList(),
     val flats: List<OwnFlat> = emptyList(),
+    val comments: List<Comment> = emptyList(),
+    val commentReports: List<CommentReport> = emptyList(),
 )
 
 class AppViewModel(application: Application) : AndroidViewModel(application) {
@@ -197,6 +201,15 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         detailLoading = false
     }
 
+    /** Refreshes the flat's lists (e.g. comment counts) without a loading state. */
+    fun refreshFlatLists() = viewModelScope.launch {
+        val current = flat ?: return@launch
+        runCatching {
+            reviews = api.tenantReviews(current.id)
+            interactions = api.interactions(current.id)
+        }
+    }
+
     private suspend fun refreshPlace() {
         flat?.let { loadFlat(it) }
         selected?.let { s -> runCatching { api.location(s.id) }.onSuccess { selected = it } }
@@ -249,6 +262,33 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun decide(request: Deletion, approve: Boolean) = viewModelScope.launch {
         if (attempt { api.decide(request.id, approve) }) loadNotebook()
+    }
+
+    // Discussions under a review or interaction (see ui/Discussion.kt).
+
+    /** The discussion's comments, oldest first, or null when it could not load. */
+    suspend fun comments(onReview: Boolean, subjectId: String): List<Comment>? =
+        runCatching { api.comments(onReview, subjectId) }.onFailure(::fail).getOrNull()
+
+    suspend fun postComment(onReview: Boolean, subjectId: String, body: String) =
+        attempt { api.postComment(onReview, subjectId, body) }
+
+    suspend fun editComment(comment: Comment, body: String) = attempt { api.editComment(comment.id, body) }
+
+    suspend fun deleteComment(comment: Comment) = attempt { api.deleteComment(comment.id) }
+
+    suspend fun reportComment(comment: Comment, reason: String) = attempt {
+        api.reportComment(comment.id, reason)
+        message = "Thanks. An admin will review this comment."
+    }
+
+    /** Deletes one of the visitor's comments from the notebook. */
+    fun deleteOwnComment(comment: Comment) = viewModelScope.launch {
+        if (deleteComment(comment)) loadNotebook()
+    }
+
+    fun decideReport(report: CommentReport, remove: Boolean) = viewModelScope.launch {
+        if (attempt { api.decideReport(report.id, remove) }) loadNotebook()
     }
 
     suspend fun setName(name: String?): Boolean = attempt { account = api.setName(name) }
@@ -333,6 +373,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 requests = api.ownDeletionRequests(),
                 adminRequests = if (account?.isAdmin == true) api.pendingDeletionRequests() else emptyList(),
                 flats = api.ownFlats(),
+                comments = api.ownComments().filter { it.deleted_at == null },
+                commentReports = if (account?.isAdmin == true) api.pendingCommentReports() else emptyList(),
             )
         }
         notebookLoading = false

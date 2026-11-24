@@ -12,6 +12,7 @@ import {
   SignIn,
 } from "./components";
 import PropertyMap from "./Map";
+import Discussion, { DiscussionLink } from "./Discussion";
 import LocalitySearch, { DEFAULT_CENTER } from "./LocalitySearch";
 import type { Area } from "./LocalitySearch";
 import type { Bounds, Focus, MapView, Point } from "./Map";
@@ -66,6 +67,17 @@ export default function App() {
   /** The signed-in user's own reviews of the selected flat, by id. */
   const [mine, setMine] = useState<Map<string, Review>>(new Map());
   const [editingReview, setEditingReview] = useState<Review | null>(null);
+  /** A review or interaction opened on its own page, with its discussion. */
+  const [post, setPost] = useState<Review | Interaction | null>(null);
+  function openPost(item: Review | Interaction) {
+    setPost(item);
+    if (listHidden) toggleList(false);
+    if (panelRef.current) panelRef.current.scrollTop = 0;
+  }
+  function closePost() {
+    setPost(null);
+    if (panelRef.current) panelRef.current.scrollTop = 0;
+  }
   const [interactions, setInteractions] = useState<Interaction[]>([]);
   const [account, setAccount] = useState<Account | null>(null);
   const [dialog, setDialog] = useState<Dialog | null>(null);
@@ -169,6 +181,36 @@ export default function App() {
       live = false;
     };
   }, []);
+  // Reopen a post from the address bar (a refresh or shared link).
+  useEffect(() => {
+    const wanted = restored.post;
+    if (!wanted) return;
+    let live = true;
+    const path =
+      wanted.kind === "review"
+        ? `/tenant-reviews/${wanted.id}`
+        : `/interactions/${wanted.id}`;
+    api<{ data: Review | Interaction }>(path)
+      .then((r) => {
+        if (live) setPost(r.data);
+      })
+      .catch(() => {
+        // Deleted since; the place still opens.
+      });
+    return () => {
+      live = false;
+    };
+  }, []);
+  // A post belongs to one place: leaving that place closes it.
+  useEffect(() => {
+    if (
+      post &&
+      selected &&
+      post.location_id &&
+      post.location_id !== selected.id
+    )
+      setPost(null);
+  }, [selected?.id]);
   useEffect(() => {
     writeUrlState({
       at: !area
@@ -179,8 +221,11 @@ export default function App() {
       area: area?.name ?? null,
       place: area ? (selected?.id ?? null) : null,
       flat: flat?.id ?? null,
+      post: post
+        ? { kind: "rating" in post ? "review" : "interaction", id: post.id }
+        : null,
     });
-  }, [area, view, selected?.id, flat?.id]);
+  }, [area, view, selected?.id, flat?.id, post?.id]);
   // Where search suggestions are centred: on the map, its current centre;
   // on the home page, the visitor's position if known, else the default city.
   const searchNear: Point = area
@@ -372,6 +417,11 @@ export default function App() {
   function changeArea() {
     document.getElementById("locality-search")?.focus();
   }
+  /** Sign in and come back to the same view, e.g. to join a discussion. */
+  function signInOnly() {
+    afterSignIn.current = null;
+    setDialog("signin");
+  }
   function requireAccount(next: Dialog) {
     if (account) setDialog(next);
     else {
@@ -453,7 +503,16 @@ export default function App() {
     0,
   );
   const items = tab === "tenant" ? reviews : interactions;
+  // The open post, kept current as the flat's lists reload (edits, comment counts).
+  const shownPost =
+    post &&
+    (("rating" in post ? reviews : interactions).find(
+      (i) => i.id === post.id,
+    ) ??
+      post);
+  const postFlat = post && flats.find((f) => f.id === post.flat_id);
   const closeDetails = () => {
+    setPost(null);
     setSelected(null);
     setFlat(null);
     setDraft(null);
@@ -779,6 +838,52 @@ export default function App() {
                   )}
                 </div>
               </section>
+            ) : shownPost ? (
+              <section
+                className="detail post-page"
+                aria-label={
+                  "rating" in shownPost
+                    ? "Tenant review and its discussion"
+                    : "Interaction and its discussion"
+                }
+              >
+                <div className="panel-top">
+                  <button className="back-link" onClick={closePost}>
+                    <Icon name="back" size={18} /> Back to{" "}
+                    {selected.building_name || "this property"}
+                  </button>
+                  <button
+                    className="hide-list"
+                    onClick={() => toggleList(true)}
+                    aria-controls="panel"
+                    aria-label="Hide details"
+                    title="Hide details"
+                  >
+                    <Icon name="close" size={18} />
+                  </button>
+                </div>
+                <header className="detail-head">
+                  <p className="post-kicker">
+                    {"rating" in shownPost ? "Tenant review" : "Interaction"}
+                    {postFlat && ` · Flat ${postFlat.label}`}
+                  </p>
+                  <h2>{selected.building_name || "Rental property"}</h2>
+                  <p>
+                    <Icon name="pin" size={16} /> {selected.address}
+                  </p>
+                </header>
+                <FeedbackCard
+                  item={shownPost}
+                  own={mine.get(shownPost.id)}
+                  onEdit={setEditingReview}
+                />
+                <Discussion
+                  subject={shownPost}
+                  account={account}
+                  onSignIn={signInOnly}
+                  onChange={() => setVersion((v) => v + 1)}
+                />
+              </section>
             ) : (
               <section
                 className="detail"
@@ -960,7 +1065,13 @@ export default function App() {
                               item={item}
                               own={mine.get(item.id)}
                               onEdit={setEditingReview}
-                            />
+                              onOpen={() => openPost(item)}
+                            >
+                              <DiscussionLink
+                                subject={item}
+                                onOpen={() => openPost(item)}
+                              />
+                            </FeedbackCard>
                           ))}
                         </div>
                       </>

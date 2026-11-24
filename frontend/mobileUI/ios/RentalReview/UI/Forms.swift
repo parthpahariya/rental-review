@@ -140,6 +140,8 @@ struct TextPrompt: View {
     let label: String
     let action: String
     let maxLength: Int
+    /// Text to start with, e.g. the comment being edited.
+    var initial = ""
     let submit: (String) async -> Bool
     @State private var value = ""
     @State private var busy = false
@@ -164,5 +166,6 @@ struct TextPrompt: View {
                 }
         }
         .sheetSizes([.medium])
+        .onAppear { if value.isEmpty { value = initial } }
     }
 }

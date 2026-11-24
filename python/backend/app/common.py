@@ -57,6 +57,24 @@ def current_user(request: Request, db: DbSession = Depends(get_db)):
     return user
 
 
+def optional_user(request: Request, db: DbSession = Depends(get_db)):
+    """The signed-in viewer for public reads, or None. Never fails: a missing or
+    expired token just means the viewer sees what everyone sees."""
+    auth = request.headers.get("authorization", "")
+    if not auth.startswith("Bearer "):
+        return None
+    return db.scalar(
+        select(User)
+        .join(Session, Session.user_id == User.id)
+        .where(
+            Session.token_digest == digest(auth[7:]),
+            Session.revoked_at.is_(None),
+            Session.expires_at > now(),
+            User.status == "active",
+        )
+    )
+
+
 def admin_user(user: User = Depends(current_user)):
     if user.role != "admin":
         fail(403, "FORBIDDEN", "Administrator access is required.")
@@ -127,6 +145,7 @@ def review_data(db, review):
     result.update(
         location_id=db.get(Flat, review.flat_id).location_id,
         editing_deadline=review.submitted_at + timedelta(days=30),
+        comment_count=comment_count(db, tenant_review_id=review.id),
     )
     return result
 
@@ -137,7 +156,53 @@ def interaction_data(db, row):
     return dict(
         fields(row, "id flat_id description interaction_date submitted_at"),
         location_id=db.get(Flat, row.flat_id).location_id,
+        comment_count=comment_count(db, interaction_id=row.id),
     )
+
+
+COMMENT_EDIT_DAYS = 30
+
+
+def visible_comments(**subject):
+    """Comments in one discussion that are still shown (not deleted or removed)."""
+    from .models import Comment
+
+    query = select(Comment).where(Comment.deleted_at.is_(None), Comment.removed_at.is_(None))
+    for key, value in subject.items():
+        query = query.where(getattr(Comment, key) == value)
+    return query
+
+
+def comment_count(db, **subject):
+    from sqlalchemy import func
+
+    return db.scalar(select(func.count()).select_from(visible_comments(**subject).subquery()))
+
+
+def comment_data(db, row, viewer=None):
+    """A comment's public shape. It names no one; `by_subject_author` only says
+    whether the commenter also wrote the review or interaction being discussed."""
+    from .models import Interaction, TenantReview
+
+    subject = (
+        db.get(TenantReview, row.tenant_review_id)
+        if row.tenant_review_id
+        else db.get(Interaction, row.interaction_id)
+    )
+    result = fields(row, "id tenant_review_id interaction_id body submitted_at updated_at")
+    result.update(
+        subject_type="tenant_review" if row.tenant_review_id else "interaction",
+        by_subject_author=subject.author_id == row.author_id,
+        edited=row.updated_at > row.submitted_at + timedelta(seconds=1),
+        editing_deadline=row.submitted_at + timedelta(days=COMMENT_EDIT_DAYS),
+    )
+    if viewer is not None:
+        mine = row.author_id == viewer.id
+        result.update(
+            mine=mine,
+            can_edit=mine and now() < row.submitted_at + timedelta(days=COMMENT_EDIT_DAYS),
+        )
+    return result
 
 
 def deletion_data(db, row, admin=False):
@@ -156,7 +221,12 @@ def deletion_data(db, row, admin=False):
     return result
 
 
-def page(db, query, model, serializer, scope, limit=20, cursor=None, chronological=False):
+def page(
+    db, query, model, serializer, scope, limit=20, cursor=None, chronological=False,
+    oldest_first=False,
+):
+    """One page of `query`. Chronological pages run newest first, or oldest first
+    (discussions) with `oldest_first`; others run in id order."""
     offset = 0
     if cursor:
         try:
@@ -174,15 +244,19 @@ def page(db, query, model, serializer, scope, limit=20, cursor=None, chronologic
 
                 from sqlalchemy import tuple_
 
-                query = query.where(
-                    tuple_(model.submitted_at, model.id)
-                    < tuple_(datetime.fromisoformat(data["at"]), after_id)
-                )
+                key = tuple_(model.submitted_at, model.id)
+                after = tuple_(datetime.fromisoformat(data["at"]), after_id)
+                query = query.where(key > after if oldest_first else key < after)
             else:
                 query = query.where(model.id > after_id)
         except (ValueError, KeyError, TypeError):
             fail(400, "INVALID_CURSOR", "This page token is invalid for these filters.")
-    order = (model.submitted_at.desc(), model.id.desc()) if chronological else (model.id.asc(),)
+    if not chronological:
+        order = (model.id.asc(),)
+    elif oldest_first:
+        order = (model.submitted_at.asc(), model.id.asc())
+    else:
+        order = (model.submitted_at.desc(), model.id.desc())
     rows = db.scalars(query.order_by(*order).offset(offset).limit(limit + 1)).all()
     next_cursor = None
     if len(rows) > limit:

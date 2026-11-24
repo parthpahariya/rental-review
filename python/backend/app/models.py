@@ -171,3 +171,71 @@ class DeletionRequest(Identity, Base):
             postgresql_where=text("status = 'pending'"),
         ),
     )
+
+
+class Comment(Identity, Base):
+    """A public comment in the discussion under one tenant review or interaction.
+
+    Like reviews, comments name no one: the public shape carries no author
+    identity, only whether the commenter also wrote the review or interaction
+    being discussed. Authors may edit for 30 days and delete at any time; an
+    admin removes reported comments. Both hide the comment but keep the row,
+    so reports and decisions keep their context.
+    """
+
+    __tablename__ = "comments"
+    author_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), index=True)
+    # Exactly one of these is set: the review or interaction under discussion.
+    tenant_review_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("tenant_reviews.id"))
+    interaction_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("interaction_reviews.id")
+    )
+    body: Mapped[str] = mapped_column(Text)
+    submitted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+    # Deleted by its author.
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Removed by an admin after a report.
+    removed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (
+        CheckConstraint(
+            "(tenant_review_id IS NULL) <> (interaction_id IS NULL)",
+            name="ck_comments_one_subject",
+        ),
+        CheckConstraint("length(trim(body)) > 0", name="ck_comments_body"),
+        # Each discussion lists its visible comments oldest first.
+        Index(
+            "ix_comment_review_order",
+            "tenant_review_id",
+            "submitted_at",
+            "id",
+            postgresql_where=text("tenant_review_id IS NOT NULL"),
+        ),
+        Index(
+            "ix_comment_interaction_order",
+            "interaction_id",
+            "submitted_at",
+            "id",
+            postgresql_where=text("interaction_id IS NOT NULL"),
+        ),
+    )
+
+
+class CommentReport(Identity, Base):
+    """A signed-in visitor's report of a comment, for the admin queue. An admin's
+    decision settles every pending report of the same comment."""
+
+    __tablename__ = "comment_reports"
+    comment_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("comments.id"), index=True)
+    reported_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), index=True)
+    reason: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(10), default="pending", index=True)
+    submitted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    decided_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    decision_note: Mapped[str | None] = mapped_column(Text)
+    __table_args__ = (
+        CheckConstraint("status IN ('pending', 'removed', 'dismissed')"),
+        CheckConstraint("length(trim(reason)) > 0", name="ck_comment_reports_reason"),
+        UniqueConstraint("comment_id", "reported_by", name="uq_comment_report_reporter"),
+    )

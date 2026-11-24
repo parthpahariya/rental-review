@@ -14,6 +14,8 @@ struct Notebook {
     var requests: [Deletion] = []
     var adminRequests: [Deletion] = []
     var flats: [OwnFlat] = []
+    var comments: [Comment] = []
+    var commentReports: [CommentReport] = []
 }
 
 /// All app state and the actions screens trigger (the iOS twin of Android's AppViewModel).
@@ -170,6 +172,13 @@ final class AppModel: ObservableObject {
         detailLoading = false
     }
 
+    /// Refreshes the flat's lists (e.g. comment counts) without a loading state.
+    func refreshFlatLists() async {
+        guard let current = flat else { return }
+        if let rows = try? await api.tenantReviews(flatId: current.id) { reviews = rows }
+        if let rows = try? await api.interactions(flatId: current.id) { interactions = rows }
+    }
+
     private func refreshPlace() async {
         if let flat { await loadFlat(flat) }
         if let s = selected, let fresh = try? await api.location(s.id) {
@@ -236,6 +245,41 @@ final class AppModel: ObservableObject {
 
     func decide(_ request: Deletion, approve: Bool) {
         Task { if await attempt({ try await api.decide(requestId: request.id, approve: approve) }) { await loadNotebook() } }
+    }
+
+    // MARK: Discussions (see UI/Discussion.swift)
+
+    /// The discussion's comments, oldest first, or nil when it could not load.
+    func comments(onReview: Bool, subjectId: String) async -> [Comment]? {
+        do { return try await api.comments(onReview: onReview, subjectId: subjectId) } catch { fail(error); return nil }
+    }
+
+    func postComment(onReview: Bool, subjectId: String, body: String) async -> Bool {
+        await attempt { try await api.postComment(onReview: onReview, subjectId: subjectId, body: body) }
+    }
+
+    func editComment(_ comment: Comment, body: String) async -> Bool {
+        await attempt { try await api.editComment(id: comment.id, body: body) }
+    }
+
+    func deleteComment(_ comment: Comment) async -> Bool {
+        await attempt { try await api.deleteComment(id: comment.id) }
+    }
+
+    func reportComment(_ comment: Comment, reason: String) async -> Bool {
+        await attempt {
+            try await api.reportComment(id: comment.id, reason: reason)
+            message = "Thanks. An admin will review this comment."
+        }
+    }
+
+    /// Deletes one of the visitor's comments from the notebook.
+    func deleteOwnComment(_ comment: Comment) {
+        Task { if await deleteComment(comment) { await loadNotebook() } }
+    }
+
+    func decideReport(_ report: CommentReport, remove: Bool) {
+        Task { if await attempt({ try await api.decideReport(id: report.id, remove: remove) }) { await loadNotebook() } }
     }
 
     func setName(_ name: String?) async -> Bool {
@@ -324,7 +368,9 @@ final class AppModel: ObservableObject {
                 interactions: try await api.ownInteractions(),
                 requests: try await api.ownDeletionRequests(),
                 adminRequests: account?.isAdmin == true ? try await api.pendingDeletionRequests() : [],
-                flats: try await api.ownFlats())
+                flats: try await api.ownFlats(),
+                comments: try await api.ownComments().filter { $0.deleted_at == nil },
+                commentReports: account?.isAdmin == true ? try await api.pendingCommentReports() : [])
         }
         notebookLoading = false
     }

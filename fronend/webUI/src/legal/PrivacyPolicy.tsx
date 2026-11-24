@@ -38,6 +38,11 @@ export default function PrivacyPolicy() {
           <strong>Interactions:</strong> a description and the date.
         </li>
         <li>
+          <strong>Comments:</strong> what you write in the discussion under a
+          review or interaction, and any reports you make about a comment, with
+          your reason.
+        </li>
+        <li>
           <strong>Places you add:</strong> building name, address, flat label
           and the map position you pin.
         </li>
@@ -75,12 +80,15 @@ export default function PrivacyPolicy() {
 
       <h2>What is public</h2>
       <p>
-        Reviews and interactions are published for everyone to read, with the
-        building, address, flat, rating, dates and text. They are{" "}
-        <strong>not</strong> shown with your name, email or account. Your email,
-        deletion requests and account details are never public. Please write
-        only about your own experience, stick to facts, and don’t name people or
-        include anyone’s phone number, email or other private details.
+        Reviews, interactions and comments are published for everyone to read,
+        with the building, address, flat, rating, dates and text. They are{" "}
+        <strong>not</strong> shown with your name, email or account; a comment
+        only shows whether its writer also wrote the review or interaction it
+        replies to. Reports you make about comments are seen only by our admins.
+        Your email, deletion requests and account details are never public.
+        Please write only about your own experience, stick to facts, and don’t
+        name people or include anyone’s phone number, email or other private
+        details.
       </p>
 
       <h2>Why we use it</h2>
@@ -134,9 +142,9 @@ export default function PrivacyPolicy() {
       <ul>
         <li>Your account data, for as long as your account exists.</li>
         <li>
-          Reviews and interactions stay published until they are deleted,
-          including after you deactivate your account, unless you ask us to
-          remove them.
+          Reviews, interactions and comments stay published until they are
+          deleted, including after you deactivate your account, unless you ask
+          us to remove them.
         </li>
         <li>
           Sessions expire after 7 days; abuse counters reset every hour; server

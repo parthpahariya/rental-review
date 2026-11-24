@@ -15,6 +15,20 @@ struct CompatNavigation<Content: View>: View {
     }
 }
 
+extension View {
+    /// Pushes `destination` as a new page while `isPresented` is true:
+    /// navigationDestination on iOS 16+, a hidden NavigationLink on 15.
+    @ViewBuilder
+    func pushes<Destination: View>(isPresented: Binding<Bool>,
+                                   @ViewBuilder destination: @escaping () -> Destination) -> some View {
+        if #available(iOS 16, *) {
+            navigationDestination(isPresented: isPresented, destination: destination)
+        } else {
+            background(NavigationLink(isActive: isPresented, destination: destination) { EmptyView() }.hidden())
+        }
+    }
+}
+
 enum SheetSize { case medium, large }
 
 extension View {

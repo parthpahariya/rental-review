@@ -37,6 +37,8 @@ export type Review = {
   can_edit?: boolean;
   can_request_deletion?: boolean;
   deleted_at?: string | null;
+  /** Visible comments in this review's discussion. */
+  comment_count?: number;
 };
 export type Interaction = {
   id: string;
@@ -46,6 +48,40 @@ export type Interaction = {
   description: string;
   interaction_date: string;
   submitted_at: string;
+  /** Visible comments in this interaction's discussion. */
+  comment_count?: number;
+};
+/**
+ * A comment in the discussion under a review or interaction. It names no one;
+ * `by_subject_author` marks replies from whoever wrote the review/interaction.
+ */
+export type Comment = {
+  id: string;
+  subject_type: "tenant_review" | "interaction";
+  tenant_review_id: string | null;
+  interaction_id: string | null;
+  body: string;
+  submitted_at: string;
+  edited: boolean;
+  editing_deadline: string;
+  by_subject_author: boolean;
+  /** Only when signed in: the viewer wrote it, and may still edit it. */
+  mine?: boolean;
+  can_edit?: boolean;
+  /** Only on the author's own list (/me/comments). */
+  place?: Place;
+  deleted_at?: string | null;
+  removed_at?: string | null;
+};
+/** A reported comment in the admin queue, with what it replies to. */
+export type CommentReport = {
+  id: string;
+  reason: string;
+  status: "pending" | "removed" | "dismissed";
+  decision_note: string | null;
+  comment: Comment;
+  subject: Review | Interaction;
+  place: Place;
 };
 export type Account = {
   id: string;
@@ -130,6 +166,7 @@ export const post = <T>(path: string, body: unknown) =>
   api<T>(path, { method: "POST", body: JSON.stringify(body) });
 export const patch = <T>(path: string, body: unknown) =>
   api<T>(path, { method: "PATCH", body: JSON.stringify(body) });
+export const remove = (path: string) => api<void>(path, { method: "DELETE" });
 /** A flat the signed-in user added, from `/me/flats`. */
 export type OwnFlat = Flat & { added_place: boolean; can_edit: boolean };
 /** What the signed-in user may change at a place they added. */

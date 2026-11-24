@@ -123,6 +123,32 @@ class RentalReviewApi(private val client: ApiClient) {
         buildJsonObject { put("decision", if (approve) "approved" else "rejected") },
         item(Deletion.serializer()),
     ).data
+
+    // Discussions: comments under a review or interaction, oldest first
+    private fun subjectPath(onReview: Boolean, id: String) =
+        if (onReview) "/tenant-reviews/$id" else "/interactions/$id"
+    suspend fun comments(onReview: Boolean, subjectId: String) =
+        all("${subjectPath(onReview, subjectId)}/comments", Comment.serializer()).first
+    suspend fun postComment(onReview: Boolean, subjectId: String, body: String) = post(
+        "${subjectPath(onReview, subjectId)}/comments",
+        buildJsonObject { put("body", body) },
+        item(Comment.serializer()),
+    ).data
+    suspend fun editComment(commentId: String, body: String) =
+        patch("/comments/$commentId", buildJsonObject { put("body", body) }, item(Comment.serializer())).data
+    suspend fun deleteComment(commentId: String) = delete("/comments/$commentId")
+    suspend fun reportComment(commentId: String, reason: String) {
+        post("/comments/$commentId/reports", buildJsonObject { put("reason", reason) }, item(ReportResult.serializer()))
+    }
+    suspend fun ownComments() = all("/me/comments", Comment.serializer()).first
+    suspend fun pendingCommentReports() = all("/admin/comment-reports", CommentReport.serializer()).first
+    suspend fun decideReport(reportId: String, remove: Boolean) {
+        post(
+            "/admin/comment-reports/$reportId/decision",
+            buildJsonObject { put("decision", if (remove) "removed" else "dismissed") },
+            item(ReportResult.serializer()),
+        )
+    }
 }
 
 @kotlinx.serialization.Serializable

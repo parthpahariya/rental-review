@@ -30,6 +30,13 @@ export default function DeleteData() {
         </li>
       </ol>
 
+      <h2>Delete a comment</h2>
+      <p>
+        Delete your own comments at any time: use Delete on the comment in its
+        discussion, or under “Your comments” in your notebook. It disappears for
+        everyone straight away.
+      </p>
+
       <h2>Delete an interaction</h2>
       <p>
         Interactions can’t be deleted in the app yet. Email <Contact /> from the
