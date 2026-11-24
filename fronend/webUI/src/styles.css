@@ -2131,16 +2131,12 @@ select {
   border-top: 1px solid var(--line);
 }
 
-/* Discussion under a review or interaction */
-.discussion {
-  margin-top: 14px;
-  padding-top: 12px;
-  border-top: 1px solid var(--line);
-}
-.discussion-toggle {
+/* A post's discussion: a link on the flat's page, a section on the post's own page */
+.discussion-link {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  margin-top: 12px;
   padding: 6px 2px;
   border: 0;
   background: none;
@@ -2150,21 +2146,40 @@ select {
   font-weight: 600;
   cursor: pointer;
 }
-.discussion-toggle:hover {
+.discussion-link:hover {
   color: var(--ink);
 }
-.discussion-toggle:focus-visible {
+.discussion-link:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
   border-radius: 6px;
 }
-.discussion-chevron {
-  display: inline-flex;
-  transform: rotate(90deg);
-  transition: transform 0.15s var(--ease);
+.post-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
-.discussion-chevron.is-open {
-  transform: rotate(-90deg);
+.post-kicker {
+  color: var(--fair);
+  font-size: 13px;
+  font-weight: 700;
+}
+.discussion {
+  margin-top: 4px;
+}
+.discussion-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-display);
+  font-size: 18px;
+}
+.discussion-title .count {
+  padding: 1px 9px;
+  border-radius: 999px;
+  background: var(--gold-soft);
+  color: #78350f;
+  font-size: 13px;
 }
 .discussion-body {
   display: flex;
@@ -2201,7 +2216,7 @@ select {
   color: var(--info);
   text-transform: none;
 }
-.review-card p.comment-body {
+.comment-body {
   margin-top: 6px;
   font-size: 14px;
   line-height: 1.55;
@@ -2234,4 +2249,12 @@ select {
 .comment-notice {
   color: var(--good);
   font-size: 14px;
+}
+/* A post whose discussion opens on click. */
+.review-card.is-openable {
+  cursor: pointer;
+  transition: border-color 0.15s var(--ease);
+}
+.review-card.is-openable:hover {
+  border-color: var(--line-strong);
 }

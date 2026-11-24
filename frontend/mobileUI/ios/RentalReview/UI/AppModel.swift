@@ -172,6 +172,13 @@ final class AppModel: ObservableObject {
         detailLoading = false
     }
 
+    /// Refreshes the flat's lists (e.g. comment counts) without a loading state.
+    func refreshFlatLists() async {
+        guard let current = flat else { return }
+        if let rows = try? await api.tenantReviews(flatId: current.id) { reviews = rows }
+        if let rows = try? await api.interactions(flatId: current.id) { interactions = rows }
+    }
+
     private func refreshPlace() async {
         if let flat { await loadFlat(flat) }
         if let s = selected, let fresh = try? await api.location(s.id) {

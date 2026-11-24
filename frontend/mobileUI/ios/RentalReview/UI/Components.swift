@@ -139,10 +139,28 @@ struct FeedbackCard: View {
     var interaction: Interaction?
     var own: Review?
     var onEdit: (Review) -> Void = { _ in }
+    /// Called when the post itself is tapped, e.g. to open its discussion.
+    var onOpen: (() -> Void)?
     /// Shown under the card, e.g. its discussion.
     var footer: AnyView?
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            post
+                // The whole post is tappable, not just its text. The footer sits
+                // outside, so taps inside the discussion don't close it.
+                .contentShape(Rectangle())
+                .onTapGesture { onOpen?() }
+                .accessibilityAction(named: "Open the discussion") { onOpen?() }
+            if let footer { footer }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.white, in: RoundedRectangle(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Brand.line))
+    }
+
+    private var post: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Image(systemName: review != nil ? "house" : "bubble.left")
@@ -161,11 +179,7 @@ struct FeedbackCard: View {
                 Text("On \(shortDate(interaction.interaction_date))").font(.caption).foregroundStyle(Brand.muted)
                 Text(interaction.description)
             }
-            if let footer { footer }
         }
-        .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.white, in: RoundedRectangle(cornerRadius: 16))
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Brand.line))
     }
 }

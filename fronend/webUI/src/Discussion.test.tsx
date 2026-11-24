@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import Discussion from "./Discussion";
+import Discussion, { DiscussionLink } from "./Discussion";
 import type { Account, Comment, Review } from "./api";
 
 afterEach(() => {
@@ -69,19 +69,24 @@ function serve(rows: Comment[]) {
 }
 
 describe("Discussion", () => {
-  it("stays collapsed with its count until opened, then lists comments oldest first", async () => {
+  it("links from a post with its comment count", async () => {
+    const onOpen = vi.fn();
+    render(<DiscussionLink subject={review} onOpen={onOpen} />);
+    await userEvent.click(
+      screen.getByRole("button", { name: /Discussion · 2 comments/ }),
+    );
+    expect(onOpen).toHaveBeenCalledOnce();
+  });
+
+  it("lists comments oldest first and asks signed-out visitors to sign in", async () => {
     const calls = serve([
       comment({ id: "c1" }),
       comment({ id: "c2", body: "About six weeks.", by_subject_author: true }),
     ]);
     render(<Discussion subject={review} account={null} onSignIn={() => {}} />);
-    const toggle = screen.getByRole("button", {
-      name: /Discussion · 2 comments/,
-    });
-    expect(toggle).toHaveAttribute("aria-expanded", "false");
-    expect(calls).toHaveLength(0);
-
-    await userEvent.click(toggle);
+    expect(
+      screen.getByRole("heading", { name: /Discussion/ }),
+    ).toBeInTheDocument();
     const items = await screen.findAllByRole("listitem");
     expect(
       items.map((li) => li.querySelector(".comment-body")?.textContent),
@@ -104,10 +109,15 @@ describe("Discussion", () => {
       comment({ id: "mine", body: "My note", mine: true, can_edit: true }),
     ]);
     vi.stubGlobal("confirm", () => true);
+    const changed = vi.fn();
     render(
-      <Discussion subject={review} account={account} onSignIn={() => {}} />,
+      <Discussion
+        subject={review}
+        account={account}
+        onSignIn={() => {}}
+        onChange={changed}
+      />,
     );
-    await userEvent.click(screen.getByRole("button", { name: /Discussion/ }));
     await screen.findAllByRole("listitem");
 
     await userEvent.type(
@@ -154,6 +164,7 @@ describe("Discussion", () => {
     expect(await screen.findByRole("status")).toHaveTextContent(
       "An admin will review",
     );
+    expect(changed).toHaveBeenCalled();
     expect(calls.at(-2)).toMatchObject({
       method: "POST",
       url: "/api/v1/comments/theirs/reports",

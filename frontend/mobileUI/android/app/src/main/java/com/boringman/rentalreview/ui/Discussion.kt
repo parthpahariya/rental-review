@@ -13,8 +13,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
@@ -36,6 +35,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -45,14 +45,38 @@ import kotlinx.coroutines.launch
 
 private const val MAX_COMMENT = 2000
 
+/** On a flat's page: how many comments a post has, opening the post's own page. */
+@Composable
+fun DiscussionLink(count: Int, onOpen: () -> Unit) {
+    Column(Modifier.fillMaxWidth()) {
+        HorizontalDivider(color = Brand.line, modifier = Modifier.padding(top = 6.dp))
+        TextButton(onClick = onOpen) {
+            Icon(Icons.AutoMirrored.Filled.Chat, contentDescription = null, modifier = Modifier.size(16.dp), tint = Brand.ink)
+            Spacer(Modifier.width(6.dp))
+            Text(
+                if (count > 0) "Discussion · $count ${if (count == 1) "comment" else "comments"}" else "Discuss",
+                color = Brand.ink, fontWeight = FontWeight.SemiBold,
+            )
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = Brand.muted)
+        }
+    }
+}
+
 /**
- * The public discussion under one tenant review or interaction: comments oldest
- * first. Collapsed until opened, so a flat's page loads no comments it does not show.
+ * The public discussion under one tenant review or interaction, on the post's own
+ * page: comments oldest first.
  */
 @Composable
-fun Discussion(vm: AppViewModel, onReview: Boolean, subjectId: String, initialCount: Int, onSignIn: () -> Unit) {
+fun Discussion(
+    vm: AppViewModel,
+    onReview: Boolean,
+    subjectId: String,
+    initialCount: Int,
+    onSignIn: () -> Unit,
+    /** After a comment is added or deleted, e.g. to refresh counts. */
+    onChange: () -> Unit = {},
+) {
     val scope = rememberCoroutineScope()
-    var open by rememberSaveable(subjectId) { mutableStateOf(false) }
     var count by remember(subjectId, initialCount) { mutableIntStateOf(initialCount) }
     var comments by remember(subjectId) { mutableStateOf<List<Comment>?>(null) }
     var draft by rememberSaveable(subjectId) { mutableStateOf("") }
@@ -68,30 +92,20 @@ fun Discussion(vm: AppViewModel, onReview: Boolean, subjectId: String, initialCo
     fun change(action: suspend () -> Boolean, after: () -> Unit = {}) {
         busy = true
         scope.launch {
-            if (action()) { reload(); after() }
+            if (action()) { reload(); onChange(); after() }
             busy = false
         }
     }
     // Reload when the visitor signs in or out: "mine" and editing rights change.
-    LaunchedEffect(open, vm.account?.id) { if (open) reload() }
+    LaunchedEffect(subjectId, vm.account?.id) { reload() }
 
     val authorLabel = if (onReview) "Wrote this review" else "Shared this interaction"
     Column(Modifier.fillMaxWidth()) {
-        HorizontalDivider(color = Brand.line, modifier = Modifier.padding(top = 6.dp))
-        TextButton(onClick = { open = !open }) {
-            Icon(Icons.AutoMirrored.Filled.Chat, contentDescription = null, modifier = Modifier.size(16.dp), tint = Brand.ink)
-            Spacer(Modifier.width(6.dp))
-            Text(
-                if (count > 0) "Discussion · $count ${if (count == 1) "comment" else "comments"}" else "Discuss",
-                color = Brand.ink, fontWeight = FontWeight.SemiBold,
-            )
-            Icon(
-                if (open) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
-                contentDescription = if (open) "Hide discussion" else "Show discussion", tint = Brand.muted,
-            )
-        }
-        if (!open) return@Column
-
+        Text(
+            if (count > 0) "Discussion · $count" else "Discussion",
+            fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Brand.ink,
+            modifier = Modifier.padding(top = 8.dp, bottom = 8.dp).semantics { heading() },
+        )
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             val list = comments
             when {

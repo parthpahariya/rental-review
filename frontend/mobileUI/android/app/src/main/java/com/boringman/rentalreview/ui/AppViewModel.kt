@@ -201,6 +201,15 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         detailLoading = false
     }
 
+    /** Refreshes the flat's lists (e.g. comment counts) without a loading state. */
+    fun refreshFlatLists() = viewModelScope.launch {
+        val current = flat ?: return@launch
+        runCatching {
+            reviews = api.tenantReviews(current.id)
+            interactions = api.interactions(current.id)
+        }
+    }
+
     private suspend fun refreshPlace() {
         flat?.let { loadFlat(it) }
         selected?.let { s -> runCatching { api.location(s.id) }.onSuccess { selected = it } }

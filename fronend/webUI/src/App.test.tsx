@@ -159,6 +159,11 @@ beforeEach(() => {
     vi.fn((input: string) => {
       if (input.includes("/auth/providers"))
         return Promise.resolve(result({ google_client_id: null }, false));
+      if (input.includes("/comments")) return Promise.resolve(result([]));
+      if (input.endsWith("/tenant-reviews/review-1"))
+        return Promise.resolve(
+          result({ ...review, location_id: location.id }, false),
+        );
       if (input.endsWith("/locations/location-1"))
         return Promise.resolve(result(location, false));
       if (input.includes("/locations/location-1/flats"))
@@ -189,6 +194,61 @@ async function browse(user: ReturnType<typeof userEvent.setup>) {
 }
 
 describe("Rental Review", () => {
+  it("opens a review on its own page with its discussion, like a building", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await browse(user);
+    await user.click(
+      await screen.findByRole("button", { name: /Parkside Residences/ }),
+    );
+    await user.click(await screen.findByText("A helpful owner."));
+
+    const page = await screen.findByRole("region", {
+      name: "Tenant review and its discussion",
+    });
+    expect(
+      within(page).getByRole("heading", { name: /Discussion/ }),
+    ).toBeInTheDocument();
+    expect(
+      within(page).getByText(/Tenant review · Flat A-204/),
+    ).toBeInTheDocument();
+    // The building's tabs and other posts give way to this one post.
+    expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("A transparent viewing."),
+    ).not.toBeInTheDocument();
+    expect(window.location.search).toContain("review=review-1");
+
+    await user.click(
+      screen.getByRole("button", { name: "Back to Parkside Residences" }),
+    );
+    expect(await screen.findByRole("tablist")).toBeInTheDocument();
+    expect(window.location.search).not.toContain("review=");
+
+    // The card's discussion link opens the same page.
+    await user.click(screen.getByRole("button", { name: /^Discuss/ }));
+    expect(
+      await screen.findByRole("region", {
+        name: "Tenant review and its discussion",
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("reopens a review page from a shared link", async () => {
+    window.history.replaceState(
+      null,
+      "",
+      "/?at=12.00000,77.00000,16&area=Indiranagar&place=location-1&flat=flat-1&review=review-1",
+    );
+    render(<App />);
+    expect(
+      await screen.findByRole("region", {
+        name: "Tenant review and its discussion",
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("A helpful owner.")).toBeInTheDocument();
+  });
+
   it("keeps the selected flat while switching accessible feedback tabs", async () => {
     const user = userEvent.setup();
     render(<App />);

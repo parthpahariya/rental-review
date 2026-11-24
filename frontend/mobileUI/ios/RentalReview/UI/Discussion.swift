@@ -2,17 +2,37 @@ import SwiftUI
 
 private let maxComment = 2000
 
-/// The public discussion under one tenant review or interaction: comments oldest
-/// first. Collapsed until opened, so a flat's page loads no comments it does not show.
-/// Buttons are borderless because the card sits in a List row, where bordered
-/// buttons would all fire on any tap in the row.
+/// On a flat's page: how many comments a post has, opening the post's own page.
+struct DiscussionLink: View {
+    let count: Int
+    let onOpen: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Divider().padding(.top, 4)
+            Button(action: onOpen) {
+                HStack(spacing: 6) {
+                    Image(systemName: "bubble.left.and.bubble.right")
+                    Text(count > 0 ? "Discussion · \(count) \(count == 1 ? "comment" : "comments")" : "Discuss")
+                        .font(.subheadline.weight(.semibold))
+                    Image(systemName: "chevron.right").font(.caption)
+                }
+                .foregroundColor(Brand.ink)
+            }
+            .buttonStyle(.borderless)
+        }
+    }
+}
+
+/// The public discussion under one tenant review or interaction, on the post's
+/// own page: comments oldest first. Buttons are borderless because it sits in a
+/// List row, where bordered buttons would all fire on any tap in the row.
 struct Discussion: View {
     @EnvironmentObject private var model: AppModel
     let onReview: Bool
     let subjectId: String
     let initialCount: Int
 
-    @State private var open = false
     @State private var count: Int?
     @State private var comments: [Comment]?
     @State private var draft = ""
@@ -26,27 +46,14 @@ struct Discussion: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Divider().padding(.top, 4)
-            Button {
-                open.toggle()
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "bubble.left.and.bubble.right")
-                    Text(shownCount > 0
-                         ? "Discussion · \(shownCount) \(shownCount == 1 ? "comment" : "comments")"
-                         : "Discuss").font(.subheadline.weight(.semibold))
-                    Image(systemName: open ? "chevron.up" : "chevron.down").font(.caption)
-                }
-                .foregroundColor(Brand.ink)
-            }
-            .buttonStyle(.borderless)
-            .accessibilityHint(open ? "Hides the discussion" : "Shows the discussion")
-
-            if open { content }
+            Text(shownCount > 0 ? "Discussion · \(shownCount)" : "Discussion")
+                .font(.title3.bold()).foregroundColor(Brand.ink)
+                .accessibilityAddTraits(.isHeader)
+            content
         }
-        .task(id: "\(open)-\(model.account?.id ?? "")") {
-            // Reload when opened, and when the visitor signs in or out ("mine" changes).
-            if open { await reload() }
+        .task(id: model.account?.id ?? "") {
+            // Reload when shown, and when the visitor signs in or out ("mine" changes).
+            await reload()
         }
         .sheet(item: $editing) { c in
             TextPrompt(title: "Edit your comment", label: "Comment", action: "Save", maxLength: maxComment,
@@ -144,6 +151,7 @@ struct Discussion: View {
         defer { busy = false }
         guard await action() else { return false }
         await reload()
+        await model.refreshFlatLists()
         return true
     }
 }

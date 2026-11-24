@@ -1,5 +1,6 @@
 package com.boringman.rentalreview.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -17,7 +18,11 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -39,6 +44,16 @@ fun PlaceDetails(vm: AppViewModel, onSignIn: () -> Unit) {
     var form by remember { mutableStateOf<FeedbackTab?>(null) }
     var editing by remember { mutableStateOf<Review?>(null) }
     var addingFlat by remember { mutableStateOf(false) }
+    /** A review or interaction opened on its own page: (is it a review, its id). */
+    var post by remember(place.id) { mutableStateOf<Pair<Boolean, String>?>(null) }
+
+    post?.let { (onReview, id) ->
+        // Back returns to the building, like leaving a place returns to the map.
+        BackHandler { post = null }
+        PostPage(vm, onReview, id, onBack = { post = null }, onEdit = { editing = it }, onSignIn = onSignIn)
+        editing?.let { FeedbackForm(vm, FeedbackTab.TENANT, it) { editing = null } }
+        return
+    }
 
     LazyColumn(
         Modifier.fillMaxWidth().padding(horizontal = 16.dp),
@@ -91,15 +106,15 @@ fun PlaceDetails(vm: AppViewModel, onSignIn: () -> Unit) {
         } else if (vm.tab == FeedbackTab.TENANT) {
             if (vm.reviews.isEmpty()) item { Empty("No tenant reviews yet") }
             items(vm.reviews, key = { it.id }) { r ->
-                FeedbackCard(review = r, own = vm.ownReviews[r.id], onEdit = { editing = it }) {
-                    Discussion(vm, onReview = true, subjectId = r.id, initialCount = r.comment_count, onSignIn = onSignIn)
+                FeedbackCard(review = r, own = vm.ownReviews[r.id], onEdit = { editing = it }, onOpen = { post = true to r.id }) {
+                    DiscussionLink(r.comment_count) { post = true to r.id }
                 }
             }
         } else {
             if (vm.interactions.isEmpty()) item { Empty("No interactions yet") }
             items(vm.interactions, key = { it.id }) { i ->
-                FeedbackCard(interaction = i) {
-                    Discussion(vm, onReview = false, subjectId = i.id, initialCount = i.comment_count, onSignIn = onSignIn)
+                FeedbackCard(interaction = i, onOpen = { post = false to i.id }) {
+                    DiscussionLink(i.comment_count) { post = false to i.id }
                 }
             }
         }
@@ -123,5 +138,57 @@ private fun Empty(title: String) {
     Column(Modifier.fillMaxWidth().padding(vertical = 20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Text(title, fontWeight = FontWeight.Bold)
         Text("Be the first to share your experience with this flat.", color = Brand.muted)
+    }
+}
+
+/**
+ * One review or interaction on its own page, with its discussion: opened from the
+ * flat's list, the way a building opens from the map.
+ */
+@Composable
+private fun PostPage(
+    vm: AppViewModel,
+    onReview: Boolean,
+    id: String,
+    onBack: () -> Unit,
+    onEdit: (Review) -> Unit,
+    onSignIn: () -> Unit,
+) {
+    val place = vm.selected ?: return
+    // Read from the flat's lists, so edits and comment counts stay current.
+    val review = if (onReview) vm.reviews.find { it.id == id } else null
+    val interaction = if (!onReview) vm.interactions.find { it.id == id } else null
+    if (review == null && interaction == null) {
+        // Gone (e.g. deleted, or another flat chosen): back to the building.
+        LaunchedEffect(id) { onBack() }
+        return
+    }
+    LazyColumn(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        item {
+            TextButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
+                Text(" Back to ${place.title}")
+            }
+        }
+        item {
+            Text(
+                (if (onReview) "Tenant review" else "Interaction") + (vm.flat?.let { " · Flat ${it.label}" } ?: ""),
+                color = Brand.fair, fontWeight = FontWeight.Bold, fontSize = 13.sp,
+            )
+            Text(place.title, fontWeight = FontWeight.Bold, fontSize = 22.sp)
+            Text(place.address, color = Brand.muted)
+        }
+        item { FeedbackCard(review = review, interaction = interaction, own = review?.let { vm.ownReviews[it.id] }, onEdit = onEdit) }
+        item {
+            Discussion(
+                vm, onReview = onReview, subjectId = id,
+                initialCount = review?.comment_count ?: interaction?.comment_count ?: 0,
+                onSignIn = onSignIn, onChange = vm::refreshFlatLists,
+            )
+        }
+        item { Spacer(Modifier.height(24.dp)) }
     }
 }

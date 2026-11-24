@@ -139,37 +139,46 @@ fun FeedbackCard(
     interaction: Interaction? = null,
     own: Review? = null,
     onEdit: (Review) -> Unit = {},
+    /** Called when the post itself is tapped, e.g. to open its discussion. */
+    onOpen: (() -> Unit)? = null,
     footer: @Composable () -> Unit = {},
 ) {
     val isReview = review != null
     Column(
         Modifier.fillMaxWidth().border(1.dp, Brand.line, RoundedCornerShape(16.dp))
             .background(Brand.surface, RoundedCornerShape(16.dp)).padding(14.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier.size(30.dp).clip(CircleShape).background(if (isReview) Brand.goldWash else Color(0xFFEFF6FF)),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(if (isReview) Icons.Filled.Home else Icons.Filled.Chat, contentDescription = null,
-                    tint = Brand.ink, modifier = Modifier.size(16.dp))
+        // The post: tapping it opens the discussion. The footer (the discussion
+        // itself) sits outside, so taps inside it don't close it.
+        Column(
+            if (onOpen != null) Modifier.fillMaxWidth().clickable(onClickLabel = "Open the discussion", onClick = onOpen)
+            else Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier.size(30.dp).clip(CircleShape).background(if (isReview) Brand.goldWash else Color(0xFFEFF6FF)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(if (isReview) Icons.Filled.Home else Icons.Filled.Chat, contentDescription = null,
+                        tint = Brand.ink, modifier = Modifier.size(16.dp))
+                }
+                Spacer(Modifier.width(8.dp))
+                Text(if (isReview) "Tenant review" else "Interaction", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                if (own?.can_edit == true) TextButton(onClick = { onEdit(own) }) { Text("Edit") }
             }
-            Spacer(Modifier.width(8.dp))
-            Text(if (isReview) "Tenant review" else "Interaction", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-            if (own?.can_edit == true) TextButton(onClick = { onEdit(own) }) { Text("Edit") }
-        }
-        if (review != null) {
-            Stars(review.rating)
-            Text(
-                "Tenancy ${shortDate(review.tenancy_start_date)} – ${shortDate(review.tenancy_end_date)}",
-                color = Brand.muted, fontSize = 12.sp,
-            )
-            Text(review.feedback, color = Brand.ink)
-        }
-        if (interaction != null) {
-            Text("On ${shortDate(interaction.interaction_date)}", color = Brand.muted, fontSize = 12.sp)
-            Text(interaction.description, color = Brand.ink)
+            if (review != null) {
+                Stars(review.rating)
+                Text(
+                    "Tenancy ${shortDate(review.tenancy_start_date)} – ${shortDate(review.tenancy_end_date)}",
+                    color = Brand.muted, fontSize = 12.sp,
+                )
+                Text(review.feedback, color = Brand.ink)
+            }
+            if (interaction != null) {
+                Text("On ${shortDate(interaction.interaction_date)}", color = Brand.muted, fontSize = 12.sp)
+                Text(interaction.description, color = Brand.ink)
+            }
         }
         footer()
     }

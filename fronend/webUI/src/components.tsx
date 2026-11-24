@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { FormEvent, ReactNode } from "react";
+import type { FormEvent, MouseEvent, ReactNode } from "react";
 import { api, allPages, message, patch, post, remove, setToken } from "./api";
 import type {
   Account,
@@ -164,19 +164,39 @@ export function FeedbackCard({
   item,
   own,
   onEdit,
+  onOpen,
   children,
 }: {
   item: Review | Interaction;
   /** The viewer's own copy of this review, when they wrote it. */
   own?: Review;
   onEdit: (review: Review) => void;
+  /**
+   * Called when the post itself is clicked, e.g. to open its discussion.
+   * Clicks on its buttons, inside the discussion, or that select text don't count;
+   * keyboard users use the discussion's own button.
+   */
+  onOpen?: () => void;
   /** Shown under the card, e.g. its discussion. */
   children?: ReactNode;
 }) {
   const isReview = "rating" in item;
+  function clicked(event: MouseEvent<HTMLElement>) {
+    const target = event.target as HTMLElement;
+    if (
+      !onOpen ||
+      target.closest(
+        "button, a, input, textarea, select, label, .discussion-body",
+      ) ||
+      window.getSelection()?.toString()
+    )
+      return;
+    onOpen();
+  }
   return (
     <article
-      className={`review-card ${isReview ? "" : "is-interaction"} ${own ? "is-own" : ""}`}
+      className={`review-card ${isReview ? "" : "is-interaction"} ${own ? "is-own" : ""} ${onOpen ? "is-openable" : ""}`}
+      onClick={clicked}
     >
       <header className="review-card-head">
         <span className="avatar" aria-hidden="true">
