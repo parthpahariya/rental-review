@@ -5,6 +5,8 @@ on:
     branches: [main]
     tags: ["v*"]
   pull_request:
+    # ready_for_review re-runs checks when a draft is marked ready; drafts themselves skip them.
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
 
 permissions:
@@ -22,6 +24,8 @@ concurrency:
 
 jobs:
   backend:
+    # Draft pull requests skip checks (compose-smoke then skips too).
+    if: github.event.pull_request.draft != true
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -60,6 +64,8 @@ jobs:
           path: python/backend/report.xml
 
   frontend:
+    # Draft pull requests skip checks (compose-smoke then skips too).
+    if: github.event.pull_request.draft != true
     runs-on: ubuntu-latest
     defaults:
       run:
