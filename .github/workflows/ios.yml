@@ -7,6 +7,8 @@ on:
   # Every pull request runs this workflow so "Check iOS app" always reports, as main's
   # branch protection requires it; the check itself is skipped when no iOS files changed.
   pull_request:
+    # ready_for_review re-runs checks when a draft is marked ready; drafts themselves skip them.
+    types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [main]
     tags: ['ios-v*']
@@ -26,7 +28,8 @@ permissions:
 jobs:
   changes:
     name: Detect iOS changes
-    if: github.ref_type != 'tag' && github.event_name != 'workflow_dispatch'
+    # Draft pull requests skip checks; "Check iOS app" is then skipped too.
+    if: github.ref_type != 'tag' && github.event_name != 'workflow_dispatch' && github.event.pull_request.draft != true
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:

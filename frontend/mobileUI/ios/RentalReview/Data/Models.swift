@@ -36,6 +36,12 @@ struct OwnFlat: Codable, Hashable, Identifiable {
     var can_edit: Bool = false
 }
 
+/// What the signed-in user may still edit at a place they added.
+struct LocationPermissions: Codable, Hashable {
+    var can_edit_location = false
+    var editable_flat_ids: [String] = []
+}
+
 /// Where one of the user's own reviews is (only in their own lists).
 struct Place: Codable, Hashable {
     let building_name: String?

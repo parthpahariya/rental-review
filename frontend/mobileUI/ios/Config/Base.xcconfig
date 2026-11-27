@@ -1,4 +1,6 @@
-// Shared build settings for the RentalReview target.
+// Shared build settings. Copy Local.xcconfig.example to Local.xcconfig for per-machine overrides.
 // Apple team for release signing (ci/ios.sh). Team IDs are not secret.
+// Keep it above the Local include so a developer's Local.xcconfig can still override it.
 DEVELOPMENT_TEAM = RHW4KG86UD
 #include "Google.xcconfig"
+#include? "Local.xcconfig"

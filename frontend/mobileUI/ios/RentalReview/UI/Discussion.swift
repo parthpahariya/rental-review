@@ -105,7 +105,10 @@ struct Discussion: View {
             .font(.subheadline.bold())
             .disabled(busy || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         } else {
-            Button("Sign in to join the discussion") { model.signIn() }
+            Button("Sign in to join the discussion") {
+                model.requireSignIn(title: "Sign in to join in",
+                                    detail: "Ask a question or add context. Comments are public but never show your name.") {}
+            }
                 .buttonStyle(.borderless).font(.subheadline.bold())
         }
     }

@@ -5,6 +5,9 @@ import SwiftUI
 struct SearchBox: View {
     @EnvironmentObject private var model: AppModel
     let near: GeoPoint?
+    var autofocus = false
+    /// Called after a pick opens the map there.
+    var onPicked: () -> Void = {}
     @State private var text = ""
     @State private var results: SearchService.Result?
     @State private var busy = false
@@ -15,19 +18,25 @@ struct SearchBox: View {
 
     var body: some View {
         VStack(spacing: 6) {
-            HStack {
-                Image(systemName: "magnifyingglass").foregroundStyle(Brand.muted)
+            HStack(spacing: 10) {
+                Image(systemName: "magnifyingglass").font(.system(size: 18, weight: .semibold)).foregroundColor(Brand.ink)
+                    .accessibilityHidden(true)
                 TextField("Search a locality or building", text: $text)
+                    .font(.system(size: 16)).foregroundColor(Brand.ink)
                     .focused($focused).submitLabel(.search).autocorrectionDisabled()
                     .onSubmit { if let first = results?.suggestions.first { choose(first) } }
                 if !text.isEmpty {
-                    Button { text = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(Brand.muted) }
-                        .accessibilityLabel("Clear search")
+                    Button { text = "" } label: {
+                        Image(systemName: "xmark.circle.fill").foregroundColor(Brand.muted).frame(width: 44, height: 44)
+                    }
+                    .accessibilityLabel("Clear search")
                 }
             }
-            .padding(.horizontal, 16).padding(.vertical, 12)
+            .padding(.leading, 18).padding(.trailing, text.isEmpty ? 18 : 4).frame(height: 52)
             .background(.white, in: Capsule())
             .overlay(Capsule().stroke(focused ? Brand.gold : Brand.line, lineWidth: focused ? 2 : 1))
+            .shadow(color: Brand.ink.opacity(0.06), radius: 7, y: 4)
+            .onAppear { if autofocus { DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { focused = true } } }
 
             if term.count >= SearchService.minSearch {
                 VStack(alignment: .leading, spacing: 0) {
@@ -43,8 +52,9 @@ struct SearchBox: View {
                                 }
                                 Spacer()
                             }
-                            .padding(.horizontal, 14).padding(.vertical, 10).contentShape(Rectangle())
+                            .padding(.horizontal, 14).padding(.vertical, 10).frame(minHeight: 44).contentShape(Rectangle())
                         }
+                        .buttonStyle(.plain)
                     }
                     if let status = statusLine(list) {
                         Text(status).foregroundStyle(error != nil ? Brand.poor : Brand.muted)
@@ -56,8 +66,9 @@ struct SearchBox: View {
                     }
                 }
                 .padding(.vertical, 6)
-                .background(.white, in: RoundedRectangle(cornerRadius: 16))
-                .overlay(RoundedRectangle(cornerRadius: 16).stroke(Brand.line))
+                .background(.white, in: RoundedRectangle(cornerRadius: 18))
+                .shadow(color: Brand.ink.opacity(0.08), radius: 10, y: 4)
+                .overlay(RoundedRectangle(cornerRadius: 18).stroke(Brand.line))
             }
         }
         // A newer term cancels the older search; wait for a pause in typing.
@@ -90,6 +101,7 @@ struct SearchBox: View {
             do {
                 model.openArea(try await s.resolve())
                 text = ""
+                onPicked()
             } catch {
                 self.error = "We couldn’t open that place. Try another."
             }

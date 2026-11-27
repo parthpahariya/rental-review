@@ -32,7 +32,7 @@ it, so they look the same on either provider.
 android/  Gradle project (app module). Packages: data (API client, models),
           maps (provider, clustering), search, auth (Google), ui (screens)
 ios/      Xcode project. Folders: Data, Maps, Search, Auth, UI; Config holds
-          Info.plist and Google.xcconfig. MapLibre and GoogleSignIn come from
+          Info.plist and the xcconfigs (Debug/Release, Google, optional Local). MapLibre and GoogleSignIn come from
           Swift Package Manager.
 ```
 
@@ -50,6 +50,20 @@ container on port 8088, which forwards `/api` to the backend.
   The simulator reaches `localhost:8088`.
 
 Release builds use `https://rentalreview.boringman.in`.
+
+A physical phone must reach your computer over the LAN, on the same network. The
+web container listens on all interfaces by default (`APP_BIND_IP=0.0.0.0` in `.env`).
+
+- **iOS:** copy `ios/Config/Local.xcconfig.example` to `Local.xcconfig` (ignored by
+  Git) and set `API_BASE_URL = http:/$()/192.168.0.35:8088`, or your Mac's
+  `<LocalHostName>.local`, which survives IP changes. The `$()` keeps `//` from
+  starting a comment. iOS permits plain HTTP only for local networks; allow the app's
+  local network prompt on first launch.
+
+To build, install and relaunch the debug iOS app on a connected iPhone, run `make ios-device` from
+the repository root. `Local.xcconfig` must also set `DEVELOPMENT_TEAM` to a team Xcode is signed
+into, for signing. The target picks the first paired iPhone; pass `IOS_DEVICE=<UDID>` (from
+`xcrun devicectl list devices`) to choose one.
 
 ## Google sign-in setup
 

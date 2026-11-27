@@ -33,7 +33,7 @@ never stored in this repo. Open a read-only psql with
 - Interactive API docs: <http://localhost:8000/api/docs>
 - Readiness: <http://localhost:8000/api/health/ready>
 
-`WEB_PORT` and `API_PORT` in `.env` override these ports. Nginx proxies `/api` to FastAPI, so the UI needs no build-time API URL. PostgreSQL stays on the Docker network without a host port; `make -C ../postgres-platform local` publishes it on `127.0.0.1:5433` for local tools.
+`WEB_PORT` and `API_PORT` in `.env` override these ports. The web app listens on all host IPv4 interfaces (`APP_BIND_IP=0.0.0.0`) so phones and other devices on your network can reach it at your Mac's LAN IP, for example `http://192.168.0.35:8080`; the API stays on loopback. Set `APP_BIND_IP=127.0.0.1` to restrict the web app to this machine. Nginx proxies `/api` to FastAPI, so the UI needs no build-time API URL. PostgreSQL stays on the Docker network without a host port; `make -C ../postgres-platform local` publishes it on `127.0.0.1:5433` for local tools.
 
 The default setup seeds four **fictional** Bengaluru buildings, five flats, tenant reviews, and interactions. The interaction-only building appears in map results. Set `SEED_DEMO_DATA=false` for an empty database. Property provisioning is an operator task while its product workflow remains undecided; the demo seeder is an example.
 

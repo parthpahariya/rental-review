@@ -1,0 +1,4 @@
+#include "Base.xcconfig"
+// Release always uses the public site, including when Local overrides the debug API.
+// ci/ios.sh passes the same value from APP_BASE_URL.
+API_BASE_URL = https:/$()/rentalreview.boringman.in

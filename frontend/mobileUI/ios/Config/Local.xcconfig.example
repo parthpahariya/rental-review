@@ -1,0 +1,6 @@
+// Per-machine overrides (Git-ignored). Copy to Local.xcconfig. Write "//" in URLs as "/$()/".
+// A physical phone reaches this Mac over the LAN: its LAN IP, or `<LocalHostName>.local`
+// (scutil --get LocalHostName), which survives IP changes.
+// API_BASE_URL = http:/$()/192.168.0.35:8088
+// Apple team Xcode is signed into on this Mac (Xcode > Settings > Accounts).
+// DEVELOPMENT_TEAM = ABCDE12345

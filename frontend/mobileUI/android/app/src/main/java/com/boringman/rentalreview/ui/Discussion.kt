@@ -1,6 +1,7 @@
 package com.boringman.rentalreview.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -114,8 +115,9 @@ fun Discussion(
             }
             list?.forEach { c ->
                 Column(
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
-                        .background(if (c.mine) Brand.goldWash else Color(0xFFF8F5EF)).padding(10.dp),
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+                        .background(if (c.mine) Brand.pendingWash else Brand.surface)
+                        .border(1.dp, Brand.line, RoundedCornerShape(14.dp)).padding(12.dp),
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         if (c.by_subject_author) Badge(authorLabel, Color(0xFF1D4ED8))
@@ -145,12 +147,13 @@ fun Discussion(
                     "Comments are public. Stick to facts, and don’t name people or share contact details.",
                     color = Brand.muted, fontSize = 12.sp,
                 )
-                Button(
+                InkButton(
+                    if (busy) "Posting…" else "Post comment",
                     enabled = !busy && draft.isNotBlank(),
                     onClick = { change({ vm.postComment(onReview, subjectId, draft.trim()) }) { draft = "" } },
-                ) { Text(if (busy) "Posting…" else "Post comment") }
+                )
             } else {
-                Button(onClick = onSignIn) { Text("Sign in to join the discussion") }
+                PrimaryButton("Sign in to join the discussion", onSignIn, Modifier.fillMaxWidth(), height = 52.dp)
             }
         }
     }

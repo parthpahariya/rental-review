@@ -67,7 +67,33 @@ class RentalReviewApi(private val client: ApiClient) {
     /** Places on Rental Review whose name or address contains [text]. */
     suspend fun searchListed(text: String, limit: Int = 5) =
         get("/locations?q=${q(text)}&reviewed_only=false&limit=$limit", list(Location.serializer())).data
+    /** Reviewed places anywhere (no bounds), for the home page's "Areas with reviews". */
+    suspend fun reviewedLocations(maxPages: Int = 3) = all("/locations", Location.serializer(), maxPages).first
+    /** Every place (reviewed or not) inside the bounds: duplicates near a new pin. */
+    suspend fun locationsAround(west: Double, south: Double, east: Double, north: Double) =
+        get("/locations?bbox=$west,$south,$east,$north&reviewed_only=false&limit=20", list(Location.serializer())).data
     suspend fun location(id: String) = get("/locations/$id", item(Location.serializer())).data
+    /** What the signed-in user may edit at a place they added. */
+    suspend fun permissions(locationId: String) =
+        get("/locations/$locationId/permissions", item(Permissions.serializer())).data
+    /** Edits a place the user added; send only what changes (coordinates together). */
+    suspend fun editLocation(
+        locationId: String,
+        address: String? = null,
+        buildingName: String? = null,
+        clearName: Boolean = false,
+        at: Pair<Double, Double>? = null,
+    ) = patch(
+        "/locations/$locationId",
+        buildJsonObject {
+            address?.let { put("address", it) }
+            if (clearName) put("building_name", JsonNull) else buildingName?.let { put("building_name", it) }
+            at?.let { put("latitude", it.first); put("longitude", it.second) }
+        },
+        item(Location.serializer()),
+    ).data
+    suspend fun editFlat(flatId: String, label: String) =
+        patch("/flats/$flatId", buildJsonObject { put("label", label) }, item(Flat.serializer())).data
     suspend fun flats(locationId: String) = all("/locations/$locationId/flats", Flat.serializer()).first
     suspend fun addPlace(address: String, buildingName: String?, latitude: Double, longitude: Double, flatLabel: String) =
         post(
