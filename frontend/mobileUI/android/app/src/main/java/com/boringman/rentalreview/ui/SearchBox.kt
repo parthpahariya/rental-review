@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -33,6 +34,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -46,13 +50,15 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @Composable
-fun SearchBox(vm: AppViewModel, near: Point?, modifier: Modifier = Modifier) {
+fun SearchBox(vm: AppViewModel, near: Point?, modifier: Modifier = Modifier, autoFocus: Boolean = false) {
     var text by remember { mutableStateOf("") }
     var results by remember { mutableStateOf<SearchService.Result?>(null) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val focus = LocalFocusManager.current
+    val requester = remember { FocusRequester() }
+    if (autoFocus) LaunchedEffect(Unit) { requester.requestFocus() }
     val term = text.trim()
 
     // Wait for a pause in typing; a newer term cancels the older search.
@@ -87,9 +93,10 @@ fun SearchBox(vm: AppViewModel, near: Point?, modifier: Modifier = Modifier) {
         OutlinedTextField(
             value = text,
             onValueChange = { text = it },
-            modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text("Search a locality or building") },
-            leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+            modifier = Modifier.fillMaxWidth().focusRequester(requester)
+                .shadow(4.dp, RoundedCornerShape(999.dp)),
+            placeholder = { Text("Search a locality or building", color = Brand.muted) },
+            leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, tint = Brand.ink) },
             trailingIcon = {
                 if (text.isNotEmpty()) IconButton(onClick = { text = "" }) {
                     Icon(Icons.Filled.Clear, contentDescription = "Clear search")
@@ -101,19 +108,21 @@ fun SearchBox(vm: AppViewModel, near: Point?, modifier: Modifier = Modifier) {
             keyboardActions = KeyboardActions(onSearch = { results?.suggestions?.firstOrNull()?.let(::choose) }),
             colors = OutlinedTextFieldDefaults.colors(
                 focusedContainerColor = Brand.surface, unfocusedContainerColor = Brand.surface,
-                focusedBorderColor = Brand.gold, unfocusedBorderColor = Brand.line,
+                focusedBorderColor = Brand.gold, unfocusedBorderColor = Brand.line, cursorColor = Brand.ink,
             ),
         )
         if (term.length >= SearchService.MIN_SEARCH) {
             Column(
                 Modifier.fillMaxWidth().padding(top = 6.dp)
+                    .shadow(8.dp, RoundedCornerShape(16.dp))
                     .border(1.dp, Brand.line, RoundedCornerShape(16.dp))
                     .background(Brand.surface, RoundedCornerShape(16.dp)).padding(vertical = 6.dp),
             ) {
                 val list = results?.suggestions.orEmpty()
                 list.forEach { s ->
                     Row(
-                        Modifier.fillMaxWidth().clickable { choose(s) }.padding(horizontal = 14.dp, vertical = 10.dp),
+                        Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { choose(s) }
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Icon(

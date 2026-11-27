@@ -24,6 +24,8 @@ report.xml
 local.properties
 frontend/mobileUI/android/build/
 frontend/mobileUI/android/app/build/
+frontend/mobileUI/ios/build/
+frontend/mobileUI/ios/Config/Local.xcconfig
 frontend/mobileUI/android/.kotlin/
 xcuserdata/
 DerivedData/

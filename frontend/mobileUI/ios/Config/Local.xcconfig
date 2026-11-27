@@ -1,5 +1,0 @@
-// The iOS app's per-machine settings for Debug builds. Copy to Local.xcconfig (ignored
-// by Git), or run `make env` in the repo root. Write "//" in URLs as "/$()/".
-// Where the app reaches the backend. Default: the local stack (http://localhost:8088),
-// which works in the simulator; a real iPhone needs your Mac's LAN IP.
-// API_BASE_URL = http:/$()/192.168.1.20:8088

@@ -1,0 +1,3 @@
+// The local stack's web container, which forwards /api to the backend. Works in the simulator.
+API_BASE_URL = http:/$()/localhost:8088
+#include "Base.xcconfig"

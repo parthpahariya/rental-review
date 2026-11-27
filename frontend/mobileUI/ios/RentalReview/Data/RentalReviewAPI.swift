@@ -85,8 +85,10 @@ final class RentalReviewAPI {
     // MARK: Places
 
     /// Places inside the map view; `more` is true when there were more than fit.
-    func locations(west: Double, south: Double, east: Double, north: Double) async throws -> (rows: [Location], more: Bool) {
-        try await all("/locations?bbox=\(west),\(south),\(east),\(north)", Location.self, maxPages: 5)
+    func locations(west: Double, south: Double, east: Double, north: Double, reviewedOnly: Bool = true,
+                   maxPages: Int = 5) async throws -> (rows: [Location], more: Bool) {
+        try await all("/locations?bbox=\(west),\(south),\(east),\(north)" + (reviewedOnly ? "" : "&reviewed_only=false"),
+                      Location.self, maxPages: maxPages)
     }
     /// Places on Rental Review whose name or address contains `text`.
     func searchListed(_ text: String, limit: Int = 5) async throws -> [Location] {
@@ -104,6 +106,18 @@ final class RentalReviewAPI {
         try await send("POST", "/locations/\(locationId)/flats", body: ["label": label], as: ItemResponse<Flat>.self).data
     }
     func ownFlats() async throws -> [OwnFlat] { try await all("/me/flats", OwnFlat.self).rows }
+
+    // MARK: Editing what you added
+
+    func permissions(locationId: String) async throws -> LocationPermissions {
+        try await send("GET", "/locations/\(locationId)/permissions", as: ItemResponse<LocationPermissions>.self).data
+    }
+    func editLocation(id: String, fields: [String: Any?]) async throws -> Location {
+        try await send("PATCH", "/locations/\(id)", body: fields, as: ItemResponse<Location>.self).data
+    }
+    func editFlat(id: String, label: String) async throws -> Flat {
+        try await send("PATCH", "/flats/\(id)", body: ["label": label], as: ItemResponse<Flat>.self).data
+    }
 
     // MARK: Reviews
 

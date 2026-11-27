@@ -16,6 +16,8 @@
 		1A0000000000000000000007 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		1A0000000000000000000008 /* Google.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Google.xcconfig; sourceTree = "<group>"; };
 		1A0000000000000000000009 /* Base.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Base.xcconfig; sourceTree = "<group>"; };
+		1A000000000000000000000C /* Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Debug.xcconfig; sourceTree = "<group>"; };
+		1A000000000000000000000D /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Release.xcconfig; sourceTree = "<group>"; };
 		1A000000000000000000000A /* ExportOptions.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = ExportOptions.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -62,6 +64,8 @@
 			children = (
 				1A0000000000000000000007 /* Info.plist */,
 				1A0000000000000000000009 /* Base.xcconfig */,
+				1A000000000000000000000C /* Debug.xcconfig */,
+				1A000000000000000000000D /* Release.xcconfig */,
 				1A0000000000000000000008 /* Google.xcconfig */,
 				1A000000000000000000000A /* ExportOptions.plist */,
 			);
@@ -195,10 +199,9 @@
 		};
 		1A0000000000000000000024 /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 1A0000000000000000000009 /* Base.xcconfig */;
+			baseConfigurationReference = 1A000000000000000000000C /* Debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				API_BASE_URL = "http://localhost:8088";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_PREVIEWS = YES;
@@ -223,10 +226,9 @@
 		};
 		1A0000000000000000000025 /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 1A0000000000000000000009 /* Base.xcconfig */;
+			baseConfigurationReference = 1A000000000000000000000D /* Release.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				API_BASE_URL = "https://rentalreview.boringman.in";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_PREVIEWS = YES;

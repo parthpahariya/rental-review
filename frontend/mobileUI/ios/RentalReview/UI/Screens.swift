@@ -1,328 +1,190 @@
-import CoreLocation
 import SwiftUI
 
-private func openWeb(_ path: String) {
-    if let url = URL(string: AppConfig.siteURL + path) { UIApplication.shared.open(url) }
-}
+enum MainTab { case explore, add, notebook }
 
-/// "Use my location": one location fix, after asking permission.
-@MainActor
-final class Locator: NSObject, CLLocationManagerDelegate {
-    private let manager = CLLocationManager()
-    private var completion: ((CLLocation?) -> Void)?
+/// The bottom tab bar on Home and the Notebook: Explore · Add place · Notebook.
+struct TabBar: View {
+    @EnvironmentObject private var model: AppModel
+    let current: MainTab
 
-    func locate(_ completion: @escaping (CLLocation?) -> Void) {
-        self.completion = completion
-        manager.delegate = self
-        manager.desiredAccuracy = kCLLocationAccuracyHundredMeters
-        if manager.authorizationStatus == .notDetermined { manager.requestWhenInUseAuthorization() }
-        else { manager.requestLocation() }
-    }
-
-    nonisolated func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
-        Task { @MainActor in
-            switch manager.authorizationStatus {
-            case .authorizedWhenInUse, .authorizedAlways: manager.requestLocation()
-            case .denied, .restricted: finish(nil)
-            default: break
-            }
+    var body: some View {
+        HStack(spacing: 0) {
+            item(.explore, "Explore", "safari", "safari.fill") { model.goHome() }
+            item(.add, "Add place", "plus.square", "plus.square.fill") { model.addFromTab() }
+            item(.notebook, "Notebook", "book", "book.fill") { model.openNotebook() }
         }
+        .padding(.top, 6)
+        .background(Color.white.ignoresSafeArea(edges: .bottom))
+        .overlay(alignment: .top) { Rectangle().fill(Brand.line).frame(height: 1) }
     }
 
-    nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        let last = locations.last
-        Task { @MainActor in finish(last) }
-    }
-
-    nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        Task { @MainActor in finish(nil) }
-    }
-
-    private func finish(_ location: CLLocation?) {
-        completion?(location)
-        completion = nil
+    private func item(_ tab: MainTab, _ title: String, _ icon: String, _ selectedIcon: String,
+                      action: @escaping () -> Void) -> some View {
+        let on = tab == current
+        return Button(action: action) {
+            VStack(spacing: 3) {
+                Image(systemName: on ? selectedIcon : icon).font(.system(size: 21, weight: on ? .semibold : .regular))
+                Text(title).font(.system(size: 11, weight: on ? .bold : .medium))
+            }
+            .foregroundColor(on ? Brand.ink : Brand.muted)
+            .frame(maxWidth: .infinity, minHeight: 50)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(on ? .isSelected : [])
     }
 }
 
+/// A1: search, the hero, areas with reviews from our own data, and what the
+/// two kinds of feedback are. No map here: it opens only when asked for.
 struct HomeView: View {
     @EnvironmentObject private var model: AppModel
-    @State private var locator = Locator()
 
     var body: some View {
         VStack(spacing: 0) {
-            TopBar()
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    Text("Building by building").bold().foregroundStyle(Brand.fair)
-                    Text("Rent with your eyes open.").font(.largeTitle.weight(.heavy)).foregroundStyle(Brand.ink)
-                    Text("Buildings across India, rated by the people who lived there. See what past tenants say about deposits, repairs and rent hikes before you sign anything.")
-                        .foregroundStyle(Brand.muted)
-                    SearchBox(near: Region.defaultCenter)
-                    HStack {
-                        Button("Use my location") {
-                            locator.locate { location in
-                                if let location {
-                                    model.openArea(Area(name: "Near you", center: GeoPoint(latitude: location.coordinate.latitude,
-                                                                                         longitude: location.coordinate.longitude), zoom: 15))
-                                } else {
-                                    model.message = "We couldn’t get your location. Search for a locality instead."
-                                }
-                            }
-                        }
-                        .buttonStyle(.bordered)
-                        Button("Browse the map", action: model.browseAll).buttonStyle(.borderedProminent).tint(Brand.ink)
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(alignment: .top, spacing: 10) {
+                        SearchBox(near: Region.defaultCenter)
+                        AccountAvatar()
                     }
-                    explainer("Tenant reviews", "From people who rented the flat: a rating, what living there was like, and their tenancy dates.")
-                    explainer("Interactions", "From people who only viewed or enquired: useful red flags before you ever move in.")
-                    Divider()
+                    .padding(.top, 10)
+                    .zIndex(1)
+
+                    hero.padding(.top, 16)
+                    areas.padding(.top, 20)
+                    explainers.padding(.top, 20)
+
                     HStack(spacing: 20) {
                         Button("Privacy Policy") { openWeb("/privacy") }
                         Button("Delete your data") { openWeb("/delete-data") }
                     }
-                    .tint(Brand.ink)
+                    .font(.system(size: 13, weight: .semibold)).foregroundColor(Brand.muted)
+                    .frame(minHeight: 44).padding(.top, 16).padding(.bottom, 12)
                 }
-                .padding(20)
+                .padding(.horizontal, 16)
             }
+            TabBar(current: .explore)
         }
-        .background(Brand.goldWash)
+        .background(Brand.goldWash.ignoresSafeArea())
     }
 
-    private func explainer(_ title: String, _ body: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title).font(.headline)
-            Text(body).foregroundStyle(Brand.muted)
+    private var hero: some View {
+        ZStack(alignment: .topLeading) {
+            Brand.ink
+            BuildingLines()
+            GeometryReader { geo in
+                Circle().fill(Brand.gold).frame(width: 32, height: 32)
+                    .position(x: geo.size.width * 0.73, y: 64)
+            }
+            .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 8) {
+                Text("BUILDING BY BUILDING").font(.system(size: 12, weight: .bold)).kerning(0.5).foregroundColor(Brand.gold)
+                Text("Rent with your eyes open.").font(.system(size: 27, weight: .heavy)).foregroundColor(.white)
+                    .lineSpacing(-2).fixedSize(horizontal: false, vertical: true)
+                    .accessibilityAddTraits(.isHeader)
+            }
+            .padding(.leading, 20).padding(.top, 20).padding(.trailing, 150)
+            VStack {
+                Spacer()
+                Button(action: model.openMap) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "map").font(.system(size: 16, weight: .bold))
+                        Text("Open the map").font(.system(size: 15, weight: .heavy))
+                    }
+                    .foregroundColor(Brand.ink).padding(.horizontal, 16).frame(height: 44)
+                    .background(Brand.gold, in: Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(20)
         }
-        .padding(16).frame(maxWidth: .infinity, alignment: .leading)
-        .background(.white, in: RoundedRectangle(cornerRadius: 16))
+        .frame(height: 220)
+        .clipShape(RoundedRectangle(cornerRadius: 24))
+    }
+
+    private var areas: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Areas with reviews").font(.system(size: 16, weight: .heavy)).foregroundColor(Brand.ink)
+                    .accessibilityAddTraits(.isHeader)
+                Spacer()
+                Button(action: model.openNearMe) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "location.circle").font(.system(size: 16, weight: .semibold))
+                        Text("Near me").font(.system(size: 14, weight: .semibold))
+                    }
+                    .foregroundColor(Brand.fair).frame(minHeight: 44).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint("Opens the map around your location")
+            }
+            if !model.areasLoaded {
+                ProgressView().frame(maxWidth: .infinity, alignment: .leading).frame(height: 38)
+            } else if model.areas.isEmpty {
+                Text("As people share reviews, their areas show up here. Search or open the map to start.")
+                    .font(.system(size: 14)).foregroundColor(Brand.muted)
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(model.areas) { chip in
+                            Button { model.openArea(chip.area) } label: {
+                                HStack(spacing: 6) {
+                                    Text(chip.name).font(.system(size: 14, weight: .semibold)).foregroundColor(Brand.ink)
+                                    Text("\(chip.count)").font(.system(size: 14, weight: .medium)).foregroundColor(Brand.muted)
+                                }
+                                .padding(.horizontal, 14).frame(height: 38)
+                                .background(.white, in: Capsule()).overlay(Capsule().stroke(Brand.line))
+                                .frame(minHeight: 44).contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("\(chip.name), \(plural(chip.count, "reviewed place"))")
+                        }
+                    }
+                    .padding(.horizontal, 1)
+                }
+            }
+        }
+    }
+
+    private var explainers: some View {
+        HStack(alignment: .top, spacing: 10) {
+            explainer("key", "Tenant reviews", "From people who lived there: rating, dates, what it was like.")
+            explainer("eye", "Interactions", "From people who viewed or enquired: red flags early.")
+        }
+    }
+
+    private func explainer(_ icon: String, _ title: String, _ body: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Image(systemName: icon).font(.system(size: 18, weight: .semibold)).foregroundColor(Brand.fair)
+                .frame(height: 24).accessibilityHidden(true)
+            Text(title).font(.system(size: 14, weight: .bold)).foregroundColor(Brand.ink)
+            Text(body).font(.system(size: 12.5)).foregroundColor(Brand.muted).lineSpacing(2)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(12).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .card(radius: 16)
+        .accessibilityElement(children: .combine)
     }
 }
 
-struct ExploreView: View {
+/// The round gold avatar ("Your account"), or Sign in when signed out.
+struct AccountAvatar: View {
     @EnvironmentObject private var model: AppModel
-    @State private var listOpen = false
-    @State private var addMode = false
-    @State private var addingAt: GeoPoint?
-    @State private var center = Region.defaultCenter
-
     var body: some View {
-        VStack(spacing: 0) {
-            TopBar(back: true)
-            ZStack(alignment: .top) {
-                if let provider = model.provider {
-                    MapPane(provider: provider, addMode: addMode, center: $center)
-                } else {
-                    Color(white: 0.93)
-                }
-                SearchBox(near: center).padding(12)
-                VStack {
-                    Spacer()
-                    if addMode {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Move the map so the + is on the building.").bold()
-                            HStack {
-                                Button("Add a place here") { addingAt = center }.buttonStyle(.borderedProminent).tint(Brand.ink)
-                                Button("Cancel") { addMode = false }
-                            }
-                        }
-                        .padding(16).frame(maxWidth: .infinity, alignment: .leading)
-                        .background(.white, in: RoundedRectangle(cornerRadius: 16)).padding(16)
-                    } else {
-                        HStack(spacing: 10) {
-                            Button {
-                                listOpen = true
-                            } label: {
-                                Label("Show list · \(model.locations.count) \(model.locations.count == 1 ? "place" : "places")\(model.partial ? "+" : "")",
-                                      systemImage: "list.bullet").font(.body.bold())
-                            }
-                            .buttonStyle(.borderedProminent).tint(.white).foregroundStyle(Brand.ink)
-                            Button {
-                                if model.account == nil { model.signIn() } else { addMode = true }
-                            } label: { Label("Add", systemImage: "plus").font(.body.bold()) }
-                                .buttonStyle(.borderedProminent).tint(Brand.gold).foregroundStyle(Brand.ink)
-                        }
-                        .padding(.bottom, 24)
-                    }
-                }
+        if let account = model.account {
+            Button(action: model.openNotebook) {
+                Text(initial(account)).font(.system(size: 18, weight: .bold)).foregroundColor(Brand.ink)
+                    .frame(width: 52, height: 52).background(Brand.gold, in: Circle())
             }
-        }
-        .sheet(isPresented: $listOpen) {
-            CompatNavigation {
-                List {
-                    if model.nearestFirst.isEmpty && !model.loadingPlaces {
-                        Text("No places in this area. Move the map, or add a place here.").foregroundStyle(Brand.muted)
-                    }
-                    ForEach(model.nearestFirst) { l in
-                        Button { listOpen = false; model.select(l) } label: { PlaceRow(location: l) }
-                    }
-                }
-                .navigationTitle(model.loadingPlaces ? "Loading places…" : "Nearest to map centre")
-                .navigationBarTitleDisplayMode(.inline)
+            .buttonStyle(.plain)
+            .accessibilityLabel("Your account")
+        } else {
+            Button(action: model.promptSignIn) {
+                Text("Sign in").font(.system(size: 15, weight: .bold)).foregroundColor(Brand.ink)
+                    .padding(.horizontal, 16).frame(height: 52).background(Brand.gold, in: Capsule())
             }
-            .sheetSizes([.medium, .large])
-        }
-        .sheet(isPresented: Binding(get: { model.selected != nil }, set: { if !$0 { model.closePlace() } })) {
-            PlaceDetails().sheetSizes([.large])
-        }
-        .sheet(item: Binding(get: { addingAt.map { IdentifiedPoint(point: $0) } }, set: { addingAt = $0?.point })) { item in
-            AddPlaceForm(at: item.point) { addMode = false }
-        }
-    }
-}
-
-private struct IdentifiedPoint: Identifiable {
-    let point: GeoPoint
-    var id: String { "\(point.latitude),\(point.longitude)" }
-}
-
-struct NotebookView: View {
-    @EnvironmentObject private var model: AppModel
-    @State private var name = ""
-    @State private var deactivating = false
-    @State private var requesting: Review?
-    @State private var editing: Review?
-
-    var body: some View {
-        VStack(spacing: 0) {
-            TopBar(back: true)
-            if let account = model.account {
-                List {
-                    Section {
-                        TextField("Your name", text: $name)
-                        Text("Only you see this. It never appears with your reviews.").font(.footnote).foregroundStyle(Brand.muted)
-                        HStack {
-                            Button("Save name") { Task { await model.setName(name.isEmpty ? nil : String(name.prefix(200))) } }
-                            if account.name_is_custom == true {
-                                Button("Use my Google name") {
-                                    Task { if await model.setName(nil) { name = model.account?.name ?? "" } }
-                                }
-                            }
-                        }
-                        .buttonStyle(.borderless)
-                    } header: { Text("Your rental notebook").font(.title2.bold()).foregroundStyle(Brand.ink).textCase(nil) }
-
-                    if model.notebookLoading { ProgressView() }
-
-                    Section("Places you added") {
-                        if model.notebook.flats.isEmpty { Text("You haven’t added a place yet.").foregroundStyle(Brand.muted) }
-                        ForEach(model.notebook.flats) { f in
-                            record("\(f.location.title) · Flat \(f.label)", f.added_place ? "You added this building" : "You added a flat here") {
-                                Button("Open") { model.openOwn(locationId: f.location.id, flatId: f.id, tab: .tenant) }
-                            }
-                        }
-                    }
-
-                    Section("Your tenant reviews") {
-                        if model.notebook.reviews.isEmpty { Text("No tenant reviews yet.").foregroundStyle(Brand.muted) }
-                        ForEach(model.notebook.reviews) { r in
-                            record(placeTitle(r.place, "Tenant review"),
-                                   String(repeating: "★", count: r.rating) + " · " + (r.deleted_at != nil ? "Deleted after admin approval" : "Editing closes \(shortDate(r.editing_deadline))"),
-                                   r.feedback) {
-                                if let locationId = r.location_id {
-                                    Button("Open") { model.openOwn(locationId: locationId, flatId: r.flat_id, tab: .tenant) }
-                                }
-                                if r.can_edit == true { Button("Edit") { editing = r } }
-                                if r.can_request_deletion == true { Button("Request deletion") { requesting = r } }
-                            }
-                        }
-                    }
-
-                    Section("Your interactions") {
-                        if model.notebook.interactions.isEmpty { Text("No interactions shared yet.").foregroundStyle(Brand.muted) }
-                        ForEach(model.notebook.interactions) { i in
-                            record(placeTitle(i.place, "Interaction"), "On \(shortDate(i.interaction_date))", i.description) {
-                                if let locationId = i.location_id {
-                                    Button("Open") { model.openOwn(locationId: locationId, flatId: i.flat_id, tab: .interaction) }
-                                }
-                            }
-                        }
-                    }
-
-                    if !model.notebook.requests.isEmpty {
-                        Section("Deletion requests") {
-                            ForEach(model.notebook.requests) { d in
-                                record(d.reason, d.decision_note.map { "Admin: \($0)" }) {
-                                    Text(d.status).font(.caption.bold()).foregroundStyle(.white)
-                                        .padding(.horizontal, 10).padding(.vertical, 3)
-                                        .background(d.status == "approved" ? Brand.good : d.status == "rejected" ? Brand.poor : Brand.muted, in: Capsule())
-                                }
-                            }
-                        }
-                    }
-
-                    if !model.notebook.comments.isEmpty {
-                        Section("Your comments") {
-                            ForEach(model.notebook.comments) { c in
-                                record(c.place.map { "\($0.building_name ?? "Rental property") · Flat \($0.flat_label)" } ?? "Comment",
-                                       (c.onReview ? "On a tenant review" : "On an interaction") + " · \(shortDate(c.submitted_at))"
-                                           + (c.removed_at != nil ? " · Removed by an admin" : ""),
-                                       c.body) {
-                                    if c.removed_at == nil {
-                                        Button("Delete comment", role: .destructive) { model.deleteOwnComment(c) }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    if account.isAdmin {
-                        Section("Admin · Reported comments") {
-                            if model.notebook.commentReports.isEmpty { Text("No reported comments.").foregroundStyle(Brand.muted) }
-                            ForEach(model.notebook.commentReports) { r in
-                                record("\(r.place.building_name ?? "Rental property") · Flat \(r.place.flat_label)",
-                                       (r.comment.onReview ? "On a tenant review: " : "On an interaction: ") + r.subject.text,
-                                       "“\(r.comment.body)”\nReason: \(r.reason)") {
-                                    Button("Remove") { model.decideReport(r, remove: true) }.buttonStyle(.borderedProminent).tint(Brand.ink)
-                                    Button("Keep") { model.decideReport(r, remove: false) }.buttonStyle(.bordered)
-                                }
-                            }
-                        }
-                    }
-
-                    if account.isAdmin {
-                        Section("Admin · Pending deletion requests") {
-                            if model.notebook.adminRequests.isEmpty { Text("You’re all caught up.").foregroundStyle(Brand.muted) }
-                            ForEach(model.notebook.adminRequests) { d in
-                                record(d.review.map { String(repeating: "★", count: $0.rating) } ?? "Tenant review", "Reason: \(d.reason)", d.review?.feedback) {
-                                    Button("Approve") { model.decide(d, approve: true) }.buttonStyle(.borderedProminent).tint(Brand.ink)
-                                    Button("Reject") { model.decide(d, approve: false) }.buttonStyle(.bordered)
-                                }
-                            }
-                        }
-                    }
-
-                    Section {
-                        Button("Sign out", action: model.signOut)
-                        if deactivating {
-                            Text("Deactivating ends all your sessions. Your tenant reviews and interactions remain visible.")
-                            Button("Confirm deactivation", role: .destructive, action: model.deactivate)
-                            Button("Cancel") { deactivating = false }
-                        } else {
-                            Button("Deactivate account", role: .destructive) { deactivating = true }
-                        }
-                    }
-                }
-                .onAppear { name = account.name ?? "" }
-            }
-        }
-        .sheet(item: $requesting) { r in
-            TextPrompt(title: "Request deletion", label: "Why should this review be deleted?", action: "Send", maxLength: 10_000) {
-                await model.requestDeletion(r, reason: $0)
-            }
-        }
-        .sheet(item: $editing) { FeedbackForm(tab: .tenant, editing: $0) }
-    }
-
-    private func placeTitle(_ place: Place?, _ fallback: String) -> String {
-        place.map { "\($0.building_name ?? "Rental property") · Flat \($0.flat_label)" } ?? fallback
-    }
-
-    private func record<Actions: View>(_ title: String, _ subtitle: String?, _ body: String? = nil,
-                                       @ViewBuilder actions: () -> Actions) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title).bold()
-            if let subtitle { Text(subtitle).font(.footnote).foregroundStyle(Brand.muted) }
-            if let body { Text(body) }
-            HStack { actions() }.buttonStyle(.borderless)
+            .buttonStyle(.plain)
         }
     }
 }

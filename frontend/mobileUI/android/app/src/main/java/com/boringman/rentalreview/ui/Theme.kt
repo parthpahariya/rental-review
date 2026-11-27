@@ -17,6 +17,11 @@ object Brand {
     val fair = Color(0xFFB45309)
     val poor = Color(0xFFB91C1C)
     val searched = Color(0xFFE11D48)
+    /** Segmented-control tracks and quiet buttons. */
+    val beige = Color(0xFFF4EFDF)
+    /** "Deletion pending" pill. */
+    val pendingWash = Color(0xFFFEF3C7)
+    val pendingInk = Color(0xFF92400E)
 }
 
 @Composable

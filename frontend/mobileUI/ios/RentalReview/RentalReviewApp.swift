@@ -15,33 +15,25 @@ struct RentalReviewApp: App {
     }
 }
 
+/// Home, the map screen or the notebook, with a place's details over them.
+/// Details cover the screen rather than replace it, so the map underneath
+/// (when there is one) stays alive and is not recreated on the way back.
 struct ContentView: View {
     @EnvironmentObject private var model: AppModel
 
     var body: some View {
-        ZStack(alignment: .bottom) {
+        Group {
             switch model.screen {
             case .home: HomeView()
-            case .explore: ExploreView()
+            case .map: MapScreen()
             case .notebook: NotebookView()
             }
-            if let message = model.message {
-                Text(message).foregroundStyle(.white).padding(.horizontal, 16).padding(.vertical, 12)
-                    .background(Brand.ink, in: RoundedRectangle(cornerRadius: 12)).padding(.bottom, 24).padding(.horizontal, 16)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-                    .task(id: message) {
-                        try? await pause(milliseconds: 3000)
-                        if model.message == message { model.message = nil }
-                    }
-            }
         }
-        .animation(.default, value: model.message)
-        .alert("Reactivate your account?", isPresented: $model.reactivationPending) {
-            Button("Reactivate") { model.confirmReactivation(true) }
-            Button("Cancel", role: .cancel) { model.confirmReactivation(false) }
-        } message: {
-            Text("This account was deactivated. Reactivate it to sign in; your reviews are unchanged.")
+        .modifier(AppChrome(active: model.selected == nil, toastBottom: model.screen == .map ? 24 : 92))
+        .fullScreenCover(isPresented: Binding(get: { model.selected != nil }, set: { if !$0 { model.closePlace() } })) {
+            PlaceDetails().environmentObject(model)
         }
         .tint(Brand.ink)
+        .preferredColorScheme(.light)
     }
 }
